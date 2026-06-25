@@ -14,6 +14,11 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
+BROWSER_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+)
+
 
 def _slug_from_url(url, fallback_field, board):
     """Last non-empty path segment of the board URL (drops query/fragment)."""
