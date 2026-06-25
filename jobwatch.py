@@ -18,6 +18,7 @@ from pathlib import Path
 
 from adapters.ashby import fetch_ashby
 from adapters.bamboohr import fetch_bamboohr
+from adapters.dayforce import fetch_dayforce
 from adapters.greenhouse import fetch_greenhouse
 from adapters.lever import fetch_lever
 from adapters.oracle import fetch_oracle
@@ -105,6 +106,7 @@ ADAPTERS = {
     "bamboohr": fetch_bamboohr,
     "rippling": fetch_rippling,
     "ukg": fetch_ukg,
+    "dayforce": fetch_dayforce,
 }
 
 
