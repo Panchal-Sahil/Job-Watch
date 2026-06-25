@@ -100,6 +100,8 @@ the end of `main()`.
 
 ## Adding other ATS platforms
 
-Each ATS is a JSON API returning a list of jobs. Write a `fetch_<name>(board)`
-that returns the normalized job dict (`id, title, location, posted, url,
-company`) and register it in `ADAPTERS`. ~30 lines each.
+Each ATS is a JSON API returning a list of jobs. Add `adapters/<name>.py` with a
+`fetch_<name>(board)` that returns the normalized job dict (`id, title, location,
+posted, url, company`), then import it into `jobwatch.py` and register it in the
+`ADAPTERS` dict. ~30 lines each. Shared helpers (`HEADERS`, `BROWSER_UA`,
+`_slug_from_url`) live in `adapters/common.py`.
