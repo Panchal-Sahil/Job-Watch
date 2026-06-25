@@ -1,0 +1,105 @@
+# jobwatch
+
+Polls company **ATS career boards** directly and prints jobs that match your
+filters. Remembers what it has already shown you, so each run only surfaces
+what's **new** since last time. Terminal-only, no accounts, no database.
+
+Supports six ATS platforms. Other types plug in as small adapters.
+
+| ATS | URL looks like | config `type` |
+|-----|----------------|---------------|
+| Workday | `company.wdN.myworkdayjobs.com/.../SITE` | `workday` |
+| Greenhouse | `job-boards.greenhouse.io/<token>` | `greenhouse` |
+| Lever | `jobs.lever.co/<company>` | `lever` |
+| Ashby | `jobs.ashbyhq.com/<board>` | `ashby` |
+| Phenom | `jobs.<company>.com/.../c/...` (page has `phApp`) | `phenom` |
+| SuccessFactors | `careers.<company>.com/search/?...` | `successfactors` |
+| Oracle HCM | `<host>.oraclecloud.com/hcmUI/.../sites/SITE/jobs` | `oracle` |
+| Radancy/TalentBrew | `<host>/search-jobs?orgIds=...` | `radancy` |
+| SmartRecruiters | `careers.smartrecruiters.com/<company>/` | `smartrecruiters` |
+| BambooHR | `<sub>.bamboohr.com/careers` | `bamboohr` |
+| Rippling | `ats.rippling.com/<slug>/jobs` | `rippling` |
+| UKG/UltiPro | `recruiting.ultipro.ca/<TENANT>/JobBoard/<guid>/` | `ukg` |
+
+- **Greenhouse/Lever/Ashby**: slug is read from the last path segment; override
+  with `"token"`/`"company"`/`"board"`.
+- **Phenom**: reads the site's `phApp` config off the page, then queries its
+  `/widgets` API with early-careers keywords (intern/co-op/student/...). Override
+  the search terms per board with `"query": ["intern", ...]`.
+- **SuccessFactors**: hits the `tile-search-results` endpoint and *preserves the
+  board URL's own query string* — so put the company's Canada/student facet
+  params right in the URL and they're applied server-side.
+
+- **Oracle HCM**: uses the public Candidate Experience REST API (clean JSON).
+  Vanity domains (e.g. `jobs.nokia.com`) only proxy the UI, not the API — for
+  those, pass the real `*.oraclecloud.com` backend via `"host": "..."`.
+
+Note: Phenom and SuccessFactors are HTML/keyword-scraped rather than clean JSON
+APIs, so they're a bit more fragile — a site redesign can break them, and not
+every company on those platforms exposes the standard endpoints.
+
+## Setup
+
+Requires Python 3 and `requests` (you already have both).
+
+```bash
+cp config.example.json config.json
+# edit config.json — add your boards and tune filters
+python3 jobwatch.py
+```
+
+## Adding a board
+
+Open the company's careers page. If the URL looks like
+`https://COMPANY.wdN.myworkdayjobs.com/.../SITE`, it's Workday. Add:
+
+```json
+{ "name": "Shopify", "type": "workday",
+  "url": "https://shopify.wd3.myworkdayjobs.com/en-CA/external" }
+```
+
+The tool figures out the JSON API endpoint from the URL automatically. If a
+board returns nothing, pass the site slug explicitly with `"site": "..."`.
+
+## Filters
+
+All matching is whole-word and case-insensitive (so `intern` matches "Internship"
+but not "Internal"). A keyword starting with `re:` is instead treated as a raw,
+case-sensitive regex — e.g. `re:\bI{1,2}\b` in the level group counts a trailing
+entry-level roman numeral ("Security Analyst **I**") as early-career, without
+matching mid/senior "III" roles.
+
+- `title_groups` — a list of keyword-lists. A title must match **at least one
+  keyword in every group** (AND across groups, OR within a group). Use this to
+  require two things at once, e.g. group 1 = early-career terms, group 2 = your
+  tech domain. A "Client Advisor Intern" matches group 1 but not group 2, so it's
+  dropped; a "Software Developer Co-op" matches both, so it's kept.
+- `title_any` — simpler alternative to `title_groups`: keep if the title contains
+  at least one of these. Ignored when `title_groups` is set.
+- `title_none` — drop a job if its title contains any of these (e.g. `senior`).
+- `location_any` — keep only if the location contains one of these.
+
+### Tuning it
+To **broaden** results, add words to a group (more synonyms = more matches).
+To **narrow**, add a new group (every group is an extra requirement) or add
+unwanted words to `title_none`. To go back to "all early-career roles," delete
+the second (tech-domain) group from `title_groups`.
+
+Leave a list empty (`[]`) to skip that check.
+
+## Running it on a schedule (later)
+
+It's built to run manually. To get pinged automatically, add a cron entry:
+
+```
+0 9,13,17 * * *  cd /home/sp/Documents/Projects/jobwatch && python3 jobwatch.py >> log.txt 2>&1
+```
+
+To add desktop/email/Discord notifications, hook into the `new_jobs` list at
+the end of `main()`.
+
+## Adding other ATS platforms
+
+Each ATS is a JSON API returning a list of jobs. Write a `fetch_<name>(board)`
+that returns the normalized job dict (`id, title, location, posted, url,
+company`) and register it in `ADAPTERS`. ~30 lines each.
