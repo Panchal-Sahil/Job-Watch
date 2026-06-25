@@ -5,8 +5,9 @@ Run it whenever you like:  python3 jobwatch.py
 It remembers which jobs it has already shown you (seen.json), so each run only
 prints what's NEW since last time.
 
-Currently supports Workday boards. Other ATS types (Greenhouse, Lever, Ashby)
-plug in as small adapters following the same shape — see ADAPTERS at the bottom.
+Supports 12 ATS platforms. Each one is a small adapter in the `adapters/`
+package (`adapters/<platform>.py`) that returns the normalized job shape; the
+adapters are wired into the `ADAPTERS` registry below.
 """
 
 import json
