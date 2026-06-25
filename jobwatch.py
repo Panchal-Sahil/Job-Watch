@@ -27,6 +27,7 @@ from adapters.lever import fetch_lever
 from adapters.oracle import fetch_oracle
 from adapters.phenom import fetch_phenom
 from adapters.radancy import fetch_radancy
+from adapters.rippling import fetch_rippling
 from adapters.smartrecruiters import fetch_smartrecruiters
 from adapters.successfactors import fetch_successfactors
 from adapters.workday import fetch_workday
@@ -42,29 +43,6 @@ SEEN_PATH = HERE / "seen.json"
 # Normalized job shape every adapter returns:
 #   { "id", "title", "location", "posted", "url", "company" }
 # --------------------------------------------------------------------------- #
-
-
-def fetch_rippling(board):
-    """Rippling ATS public board API.
-    URL like https://ats.rippling.com/<slug>/jobs -> slug."""
-    segs = [s for s in urlparse(board["url"]).path.split("/") if s]
-    slug = board.get("board") or (segs[0] if segs else None)
-    company = board.get("name", slug)
-    api = f"https://api.rippling.com/platform/api/ats/v1/board/{slug}/jobs"
-    r = requests.get(api, headers={"User-Agent": BROWSER_UA, "Accept": "application/json"},
-                     timeout=30)
-    r.raise_for_status()
-    jobs = []
-    for p in r.json():
-        jobs.append({
-            "id": f"rippling:{slug}:{p.get('uuid')}",
-            "title": (p.get("name") or "").strip(),
-            "location": (p.get("workLocation") or {}).get("label", ""),
-            "posted": "",
-            "url": p.get("url", board["url"]),
-            "company": company,
-        })
-    return jobs
 
 
 def fetch_ukg(board):
