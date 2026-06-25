@@ -21,8 +21,9 @@ from urllib.parse import urlparse
 import requests
 
 from adapters.ashby import fetch_ashby
-from adapters.common import BROWSER_UA, HEADERS, _slug_from_url
+from adapters.common import BROWSER_UA, _slug_from_url
 from adapters.greenhouse import fetch_greenhouse
+from adapters.lever import fetch_lever
 from adapters.phenom import fetch_phenom
 from adapters.successfactors import fetch_successfactors
 from adapters.workday import fetch_workday
@@ -38,34 +39,6 @@ SEEN_PATH = HERE / "seen.json"
 # Normalized job shape every adapter returns:
 #   { "id", "title", "location", "posted", "url", "company" }
 # --------------------------------------------------------------------------- #
-
-
-def fetch_lever(board):
-    """Lever public postings API.
-    URL like https://jobs.lever.co/<company>  ->  company."""
-    slug = _slug_from_url(board["url"], "company", board)
-    company = board.get("name", slug)
-    api = f"https://api.lever.co/v0/postings/{slug}?mode=json"
-    resp = requests.get(api, headers=HEADERS, timeout=30)
-    resp.raise_for_status()
-    jobs = []
-    for p in resp.json():
-        cats = p.get("categories") or {}
-        created = p.get("createdAt")
-        posted = (
-            time.strftime("%Y-%m-%d", time.gmtime(created / 1000)) if created else ""
-        )
-        jobs.append(
-            {
-                "id": f"lever:{slug}:{p.get('id')}",
-                "title": (p.get("text") or "").strip(),
-                "location": (cats.get("location") or "").strip(),
-                "posted": posted,
-                "url": p.get("hostedUrl", board["url"]),
-                "company": company,
-            }
-        )
-    return jobs
 
 
 def fetch_smartrecruiters(board):
