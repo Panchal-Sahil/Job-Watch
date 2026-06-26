@@ -20,6 +20,7 @@ from adapters.ashby import fetch_ashby
 from adapters.bamboohr import fetch_bamboohr
 from adapters.dayforce import fetch_dayforce
 from adapters.greenhouse import fetch_greenhouse
+from adapters.icims import fetch_icims
 from adapters.lever import fetch_lever
 from adapters.oracle import fetch_oracle
 from adapters.phenom import fetch_phenom
@@ -120,6 +121,7 @@ ADAPTERS = {
     "rippling": fetch_rippling,
     "ukg": fetch_ukg,
     "dayforce": fetch_dayforce,
+    "icims": fetch_icims,
 }
 
 

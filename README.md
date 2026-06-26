@@ -4,7 +4,7 @@ Polls company **ATS career boards** directly and prints jobs that match your
 filters. Remembers what it has already shown you, so each run only surfaces
 what's **new** since last time. Terminal-only, no accounts, no database.
 
-Supports 13 ATS platforms. Other types plug in as small adapters.
+Supports 14 ATS platforms. Other types plug in as small adapters.
 
 | ATS | URL looks like | config `type` |
 |-----|----------------|---------------|
@@ -21,6 +21,7 @@ Supports 13 ATS platforms. Other types plug in as small adapters.
 | Rippling | `ats.rippling.com/<slug>/jobs` | `rippling` |
 | UKG/UltiPro | `recruiting.ultipro.ca/<TENANT>/JobBoard/<guid>/` | `ukg` |
 | Dayforce | `jobs.dayforcehcm.com/<locale>/<namespace>/<board>` | `dayforce` |
+| iCIMS | `<sub>.icims.com/jobs/search` | `icims` |
 
 - **Greenhouse/Lever/Ashby**: slug is read from the last path segment; override
   with `"token"`/`"company"`/`"board"`.
