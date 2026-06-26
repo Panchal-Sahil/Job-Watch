@@ -6,7 +6,8 @@ __pycache__/
 seen.json
 
 # Captured run output / logs
-baseline.out
+*.out
 baseline.timing
-live.out
-run.out
+
+# probe.py scratch input list
+probe-list.md

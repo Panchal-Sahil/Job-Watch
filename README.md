@@ -50,6 +50,46 @@ cp config.example.json config.json
 python3 jobwatch.py
 ```
 
+## Identifying a board's ATS (`probe.py`)
+
+Not sure what platform a careers page runs on? Point `probe.py` at it:
+
+```bash
+python3 probe.py https://www.somecompany.com/careers
+python3 probe.py https://jobs.lever.co/acme --add        # append to config.json
+python3 probe.py https://careers.acme.com --name "Acme"  # set the display name
+python3 probe.py "Acme, https://careers.acme.com" --add  # ...or pin it inline
+python3 probe.py URL1 URL2 URL3 --add                    # batch: many URLs at once
+python3 probe.py --file urls.txt --add                   # batch from a file ('-' = stdin)
+python3 probe.py --file companies.md --add               # ...including a Markdown file
+```
+
+Give a name inline as `Display Name, https://url` (one per line in a `--file`,
+or as a quoted positional arg). When present it **pins** the config entry's name
+so probe never has to guess it from the domain — handy for boards whose host is
+an opaque tenant slug (`fil` → "Fidelity Canada", `ejia` → "S&C Electric"). Lines
+without a name still work exactly as before (the name is guessed/looked up).
+
+With several URLs it processes each, then prints a summary; `--add` adds every one
+that verifies. `--name` only applies to a single URL. `--file` pulls every http(s)
+URL out of the file, so a **Markdown** list works as-is — `- [Name](url)` links,
+bullets, tables, or prose. Markdown headings (`#`) and `<!-- ... -->` comments are
+ignored, and duplicate URLs are de-duped.
+
+It reports the detected ATS (one of the supported types, a recognized-but-
+unsupported one like Jobvite/Workable, or "unknown") and prints a ready-to-paste
+`config.json` board entry. It works three ways, strongest first: the URL is
+already an ATS domain; the page **white-labels** a Greenhouse/Lever/Ashby backend
+(it extracts the real slug and confirms it via the public API); or it **guesses**
+the slug from the domain (low-confidence — verify the listed jobs are the right
+company). `--add` first **verifies the board actually works** — it runs the same
+fetch jobwatch will and adds it as long as the fetch **succeeds** (a reachable
+board with zero current postings is still valid and gets added, with a note); it
+only refuses if the fetch **errors** (use `--force` to add anyway). When it adds,
+it inserts the entry into `config.json` **at the end of its ATS group** (the file
+keeps each `type` in one contiguous block), preserving the file's style. It never
+adds a type with no adapter.
+
 ## Adding a board
 
 Open the company's careers page. If the URL looks like
