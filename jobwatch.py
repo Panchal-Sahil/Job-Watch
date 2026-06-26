@@ -82,6 +82,19 @@ def matches(job, filters):
     if any(_keyword_match(k, title) for k in title_none):
         return False
 
+    # location_none: drop foreign postings (e.g. "Richmond, VA, United States"),
+    # but rescue ones that ALSO name Canada — remote roles often read
+    # "Remote (United States | Canada)" and should be kept.
+    loc_none = [k.lower() for k in filters.get("location_none", [])]
+    if loc_none and any(k in loc for k in loc_none):
+        ca_signal = ["canada", "ontario", "quebec", "british columbia", "alberta",
+                     "manitoba", "saskatchewan", "nova scotia", "new brunswick",
+                     "newfoundland", "prince edward", "yukon", "nunavut", "nwt",
+                     ", on", ", bc", ", qc", ", ab", ", ns", ", mb", ", sk",
+                     ", nb", ", nl", ", pe", ", nt", ", yt", ", nu", ", can"]
+        if not any(c in loc for c in ca_signal):
+            return False
+
     loc_any = [k.lower() for k in filters.get("location_any", [])]
     if loc_any and not any(k in loc for k in loc_any):
         return False
@@ -163,8 +176,11 @@ def main():
         for job in jobs:
             if job["id"] in seen:
                 continue
-            seen.add(job["id"])  # mark seen even if filtered out, so it stays quiet next time
+            # Only remember jobs we actually surface. Filtered-out jobs are left
+            # unseen so that loosening filters later can still catch them (they
+            # stay silent until they match, so this adds no output noise).
             if matches(job, filters):
+                seen.add(job["id"])
                 new_jobs.append(job)
 
     if new_jobs:
