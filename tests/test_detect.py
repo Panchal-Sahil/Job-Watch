@@ -1,0 +1,130 @@
+"""Characterization tests for probe()'s detection pipeline, with HTTP mocked.
+
+Pins each of the four detection paths (host match, embedded HTML signature, guessed
+slug, recognized-but-unsupported) plus the no-match case, and the helper edge cases
+(slug from path, generic-word stoplist). Also asserts the SUPPORTED_TYPES vs
+jobwatch.ADAPTERS invariant the module comment promises.
+"""
+
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import probe
+from tests.fakehttp import FakeSession, page, api
+
+
+def run_probe(url, rules, default=None):
+    """Run probe(url) with requests.Session swapped for a scripted FakeSession."""
+    sess = FakeSession(rules, default=default)
+    with mock.patch.object(probe.requests, "Session", return_value=sess):
+        return probe.probe(url)
+
+
+class TestHostMatch(unittest.TestCase):
+    def test_workday_host_high_confidence(self):
+        res = run_probe("https://acme.wd1.myworkdayjobs.com/en-US/External",
+                        [("myworkdayjobs.com", page("<html>jobs</html>"))])
+        self.assertEqual(res.type, "workday")
+        self.assertEqual(res.confidence, "high")
+        self.assertEqual(res.config["type"], "workday")
+
+    def test_greenhouse_host_reads_slug_from_path(self):
+        res = run_probe(
+            "https://job-boards.greenhouse.io/acmeco",
+            [("job-boards.greenhouse.io/acmeco", page("<html></html>")),
+             ("boards-api.greenhouse.io/v1/boards/acmeco/jobs", api({"jobs": [1, 2, 3]})),
+             ("boards-api.greenhouse.io/v1/boards/acmeco", api({"name": "AcmeCo"}))])
+        self.assertEqual(res.type, "greenhouse")
+        self.assertEqual(res.slug, "acmeco")
+        self.assertEqual(res.job_count, 3)
+
+
+class TestEmbeddedSignature(unittest.TestCase):
+    def test_whitelabeled_greenhouse_confirmed(self):
+        html = '<a href="https://job-boards.greenhouse.io/hiddenco">Jobs</a>'
+        res = run_probe(
+            "https://careers.example-corp.com",
+            [("careers.example-corp.com", page(html)),
+             ("boards-api.greenhouse.io/v1/boards/hiddenco/jobs", api({"jobs": [1]})),
+             ("boards-api.greenhouse.io/v1/boards/hiddenco", api({"name": "HiddenCo"}))])
+        self.assertEqual(res.type, "greenhouse")
+        self.assertEqual(res.confidence, "medium")
+        self.assertEqual(res.slug, "hiddenco")
+
+    def test_greenhouse_signature_but_empty_board_keeps_looking(self):
+        # "greenhouse gas" ESG copy with no real board -> not a greenhouse hit
+        html = "We reduce greenhouse.io/embed emissions"  # signature-ish, no jobs
+        res = run_probe(
+            "https://careers.example-corp.com",
+            [("careers.example-corp.com", page(html))],
+            default=api({}, status=404))  # all confirmer calls fail
+        self.assertNotEqual(res.type, "greenhouse")
+
+    def test_phenom_signature_no_confirmer(self):
+        html = "<script>var phApp = {};</script>"
+        res = run_probe("https://jobs.example-corp.com/careers",
+                        [("jobs.example-corp.com", page(html))])
+        self.assertEqual(res.type, "phenom")
+        self.assertEqual(res.confidence, "medium")
+
+
+class TestGuessedSlug(unittest.TestCase):
+    def test_guess_from_domain_label(self):
+        # no signature in page; host label 'glider' guessed against lever -> non-empty
+        res = run_probe(
+            "https://careers.glider.com/openings",
+            [("careers.glider.com", page("<html><title>Careers</title></html>")),
+             ("api.lever.co/v0/postings/glider", api([{"id": 1}, {"id": 2}]))],
+            default=api({}, status=404))
+        self.assertEqual(res.type, "lever")
+        self.assertEqual(res.confidence, "low")
+        self.assertEqual(res.slug, "glider")
+
+    def test_empty_guessed_board_is_no_evidence(self):
+        res = run_probe(
+            "https://careers.glider.com/openings",
+            [("careers.glider.com", page("<html></html>")),
+             ("api.lever.co/v0/postings/glider", api([]))],  # empty -> rejected
+            default=api({}, status=404))
+        self.assertIsNone(res.type)
+
+
+class TestUnsupportedAndUnknown(unittest.TestCase):
+    def test_recognized_unsupported(self):
+        html = '<script src="https://apply.workable.com/x.js"></script>'
+        res = run_probe("https://careers.example-corp.com",
+                        [("careers.example-corp.com", page(html))],
+                        default=api({}, status=404))
+        self.assertIsNone(res.type)
+        self.assertEqual(res.other, "Workable")
+
+    def test_no_signature_unknown(self):
+        res = run_probe("https://careers.nondescript.com",
+                        [("careers.nondescript.com", page("<html>nothing</html>"))],
+                        default=api({}, status=404))
+        self.assertIsNone(res.type)
+        self.assertIsNone(res.other)
+
+
+class TestHelpers(unittest.TestCase):
+    def test_path_slug_drops_locale(self):
+        self.assertEqual(probe._path_slug("https://x.com/en-US/MyBoard"), "MyBoard")
+
+    def test_slug_candidates_skips_generic_words(self):
+        cands = probe._slug_candidates("https://www.careers.com/jobs", "<title>Jobs</title>")
+        for junk in ("www", "careers", "jobs", "com"):
+            self.assertNotIn(junk, cands)
+
+
+class TestInvariants(unittest.TestCase):
+    def test_supported_types_match_adapter_registry(self):
+        from jobwatch import ADAPTERS
+        self.assertEqual(probe.SUPPORTED_TYPES, set(ADAPTERS))
+
+
+if __name__ == "__main__":
+    unittest.main()
