@@ -5,7 +5,7 @@ Run it whenever you like:  python3 jobwatch.py
 It remembers which jobs it has already shown you (seen.json), so each run only
 prints what's NEW since last time.
 
-Supports 12 ATS platforms. Each one is a small adapter in the `adapters/`
+Supports 15 ATS platforms. Each one is a small adapter in the `adapters/`
 package (`adapters/<platform>.py`) that returns the normalized job shape; the
 adapters are wired into the `ADAPTERS` registry below.
 """
@@ -19,6 +19,7 @@ from pathlib import Path
 from adapters.ashby import fetch_ashby
 from adapters.bamboohr import fetch_bamboohr
 from adapters.dayforce import fetch_dayforce
+from adapters.eightfold import fetch_eightfold
 from adapters.greenhouse import fetch_greenhouse
 from adapters.icims import fetch_icims
 from adapters.lever import fetch_lever
@@ -122,6 +123,7 @@ ADAPTERS = {
     "ukg": fetch_ukg,
     "dayforce": fetch_dayforce,
     "icims": fetch_icims,
+    "eightfold": fetch_eightfold,
 }
 
 
@@ -129,6 +131,21 @@ def load_json(path, default):
     if path.exists():
         return json.loads(path.read_text())
     return default
+
+
+_DEFAULT_QUERY = None
+
+
+def _default_query_terms():
+    """Keyword-driven adapters (Phenom, Eightfold) narrow a big company board to
+    early-careers roles using these search terms. They live in one place —
+    config.json's top-level `query_terms` — so they're not duplicated per adapter.
+    Cached, and read here (not just in main()) so probe.py's --add verify uses
+    the same terms a real run would."""
+    global _DEFAULT_QUERY
+    if _DEFAULT_QUERY is None:
+        _DEFAULT_QUERY = load_json(CONFIG_PATH, {}).get("query_terms", [])
+    return _DEFAULT_QUERY
 
 
 def fetch_board(board):
@@ -139,6 +156,9 @@ def fetch_board(board):
     adapter = ADAPTERS.get(kind)
     if not adapter:
         return name, [], f"no adapter for type '{kind}'"
+    # Supply the shared early-careers search terms unless the board pins its own.
+    if "query" not in board and _default_query_terms():
+        board = {**board, "query": _default_query_terms()}
     try:
         return name, adapter(board), None
     except Exception as e:

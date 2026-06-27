@@ -9,10 +9,6 @@ import requests
 
 from adapters.common import BROWSER_UA
 
-# Default search terms used to narrow large keyword-driven boards down to
-# early-careers roles instead of pulling the whole company.
-EARLY_CAREERS_TERMS = ["intern", "co-op", "coop", "student", "graduate", "apprentice"]
-
 
 def _extract_js_object(text, marker):
     """Pull the first balanced {...} JSON object appearing after `marker`."""
@@ -47,7 +43,9 @@ def fetch_phenom(board):
     country = cfg.get("country", "global")
     page_id = cfg.get("pageId", "page1")
 
-    terms = board.get("query") or EARLY_CAREERS_TERMS
+    # Search terms come from the board's `query` (else config's `query_terms`,
+    # injected by jobwatch); an empty term searches everything.
+    terms = board.get("query") or [""]
     if isinstance(terms, str):
         terms = [terms]
 
