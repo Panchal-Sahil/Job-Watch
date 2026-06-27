@@ -21,7 +21,7 @@ Supports 15 ATS platforms. Other types plug in as small adapters.
 | Rippling | `ats.rippling.com/<slug>/jobs` | `rippling` |
 | UKG/UltiPro | `recruiting.ultipro.ca/<TENANT>/JobBoard/<guid>/` | `ukg` |
 | Dayforce | `jobs.dayforcehcm.com/<locale>/<namespace>/<board>` | `dayforce` |
-| iCIMS | `<sub>.icims.com/jobs/search` | `icims` |
+| iCIMS | `<sub>.icims.com/jobs/search`, or a careers-home vanity domain | `icims` |
 | Eightfold | `<host>/careers?...&pid=...&sort_by=...` (page has `pcsxConfig`) | `eightfold` |
 
 - **Greenhouse/Lever/Ashby**: slug is read from the last path segment; override
@@ -34,9 +34,13 @@ Supports 15 ATS platforms. Other types plug in as small adapters.
   (so it doesn't pull the whole company); override per board with `"query"`. If
   the API domain can't be read from the page, pin it with `"domain": "company.com"`.
 
-The keyword-driven adapters (Phenom, Eightfold) share one default keyword list,
-set once at the top level of `config.json` as `"query_terms"`. A board's own
-`"query"` overrides it; leave a board's `query` unset to use the shared list.
+The keyword-driven adapters (Phenom, Eightfold, and iCIMS careers-home) share one
+default keyword list, set once at the top level of `config.json` as `"query_terms"`.
+A board's own `"query"` overrides it; leave a board's `query` unset to use the list.
+- **iCIMS**: two products behind one `type`. A real `<sub>.icims.com` host is the
+  classic HTML portal (fetched whole, filtered locally). A white-labeled vanity
+  domain (`careers.amd.com`, `www.pepsicojobs.com`, …) runs the newer careers-home
+  SPA — its `/api/jobs` JSON endpoint is keyword-searched like Phenom/Eightfold.
 - **SuccessFactors**: hits the `tile-search-results` endpoint and *preserves the
   board URL's own query string* — so put the company's Canada/student facet
   params right in the URL and they're applied server-side.
