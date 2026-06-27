@@ -86,15 +86,12 @@ def matches(job, filters):
 
     # location_none: drop foreign postings (e.g. "Richmond, VA, United States"),
     # but rescue ones that ALSO name Canada — remote roles often read
-    # "Remote (United States | Canada)" and should be kept.
+    # "Remote (United States | Canada)" and should be kept. The Canada signals
+    # live in config.json under "location_rescue".
     loc_none = [k.lower() for k in filters.get("location_none", [])]
     if loc_none and any(k in loc for k in loc_none):
-        ca_signal = ["canada", "ontario", "quebec", "british columbia", "alberta",
-                     "manitoba", "saskatchewan", "nova scotia", "new brunswick",
-                     "newfoundland", "prince edward", "yukon", "nunavut", "nwt",
-                     ", on", ", bc", ", qc", ", ab", ", ns", ", mb", ", sk",
-                     ", nb", ", nl", ", pe", ", nt", ", yt", ", nu", ", can"]
-        if not any(c in loc for c in ca_signal):
+        loc_rescue = [k.lower() for k in filters.get("location_rescue", [])]
+        if not any(c in loc for c in loc_rescue):
             return False
 
     loc_any = [k.lower() for k in filters.get("location_any", [])]
@@ -129,7 +126,13 @@ ADAPTERS = {
 
 def load_json(path, default):
     if path.exists():
-        return json.loads(path.read_text())
+        # An empty/whitespace file (e.g. a run interrupted mid-write of seen.json)
+        # would crash json.loads — treat it as "nothing yet" and fall back. Genuinely
+        # malformed JSON still raises, so a corrupt config.json fails loudly.
+        text = path.read_text().strip()
+        if not text:
+            return default
+        return json.loads(text)
     return default
 
 
