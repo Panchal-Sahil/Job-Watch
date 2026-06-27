@@ -3,6 +3,8 @@
 
     python3 probe.py <url> [--name "Display Name"] [--add]
     python3 probe.py "Display Name, <url>" [--add]   # pin the name inline
+    # ...or separate the name from the url with a tab / 2+ spaces (a pasted
+    #    `Name<TAB>url` list works as-is, e.g. via --file)
 
 It fetches the page and figures out the Applicant Tracking System behind it:
 
@@ -18,7 +20,8 @@ It fetches the page and figures out the Applicant Tracking System behind it:
                       whether an adapter is worth building.
 
 On a hit it prints a ready-to-paste `config.json` board entry. With `--add` it
-appends that entry to config.json's `boards` array (preserving the file's style).
+inserts that entry into config.json's `boards` array in its ATS-type group (each
+type stays one contiguous block, in canonical adapter order), preserving the style.
 
 This is the "hidden ATS trick" from HANDOFF.md §7, turned into a tool. The 14
 types it can map to a working adapter are in SUPPORTED_TYPES below.
@@ -42,7 +45,7 @@ CONFIG_PATH = HERE / "config.json"
 SUPPORTED_TYPES = {
     "workday", "greenhouse", "lever", "ashby", "phenom", "successfactors",
     "oracle", "radancy", "smartrecruiters", "bamboohr", "rippling", "ukg",
-    "dayforce", "icims",
+    "dayforce", "icims", "eightfold",
 }
 
 # --------------------------------------------------------------------------- #
@@ -85,6 +88,7 @@ HTML_SIGNATURES = [
      r"jobs\.ashbyhq\.com/([a-z0-9_-]+)"),
     ("radancy", r"talentbrew|tbcdn|/search-jobs\?orgIds", None),
     ("phenom", r"var\s+phApp|phApp\.ddo|widgetApiEndpoint", None),
+    ("eightfold", r"eightfold\.ai|pcsxConfig|/api/pcsx/", None),
     ("icims", r"\.icims\.com|iCIMS_JobsTable|iCIMS_JobCardItem", None),
     ("oracle", r"\.oraclecloud\.com|/hcmUI/CandidateExperience", None),
     ("dayforce", r"dayforcehcm\.com", None),
@@ -102,7 +106,6 @@ OTHER_ATS = [
     ("Cornerstone OnDemand", r"\.csod\.com|cornerstoneondemand"),
     ("Workable", r"workable\.com|apply\.workable"),
     ("Yello", r"yello\.co"),
-    ("Eightfold", r"eightfold\.ai"),
     ("Beamery", r"beamery\.com|beamery"),
     ("Avature", r"avature\.net|avature"),
     ("JazzHR", r"applytojob\.com|jazzhr"),
@@ -415,16 +418,20 @@ def _format_entry(entry):
 
 
 def _append_to_config(entry):
-    """Insert the board into config.json at the end of its `type` group (the file
-    keeps all boards of a type in one contiguous block). Falls back to the end of
-    the array if that type has no boards yet. Returns (group, count_of_type)."""
+    """Insert the board into config.json in its `type` group, keeping every type in
+    one contiguous block. If the type already has boards, the entry joins the end of
+    that block. If it's a brand-new type, a new block is opened in canonical adapter
+    order (matching jobwatch.ADAPTERS) and set off by a blank line — so new additions
+    land in their proper group rather than being dumped onto whatever sits last.
+    Returns (group_label, count_of_type)."""
+    from jobwatch import ADAPTERS  # canonical group order — single source of truth
+    order = list(ADAPTERS)
+    rank = lambda t: order.index(t) if t in order else len(order)
+
     text = CONFIG_PATH.read_text()
     boards = json.loads(text)["boards"]
     new_type = entry["type"]
-
-    # Last board sharing this type; else the very last board (end-append).
-    same = [i for i, b in enumerate(boards) if b.get("type") == new_type]
-    target_idx = same[-1] if same else len(boards) - 1
+    block = _format_entry(entry)
 
     # Map each board to its text span. Board dicts are flat (no nested braces),
     # so `{...}` blocks in the boards-array region line up 1:1 with `boards`.
@@ -434,15 +441,32 @@ def _append_to_config(entry):
         # Safety fallback: structure not as expected → append at end of array.
         marker = text.rfind("\n  ]")
         prev = text.rfind("}", 0, marker)
-        insert_at = prev + 1
-    else:
-        insert_at = arr_start + blocks[target_idx].end()
+        new = text[:prev + 1] + ",\n" + block + text[prev + 1:]
+        json.loads(new)
+        CONFIG_PATH.write_text(new)
+        return "(end, fallback)", sum(b.get("type") == new_type for b in boards) + 1
 
-    block = _format_entry(entry)
-    new = text[:insert_at] + ",\n" + block + text[insert_at:]
+    same = [i for i, b in enumerate(boards) if b.get("type") == new_type]
+    if same:
+        # Existing group: tack onto the end of the block, no separator.
+        insert_at = arr_start + blocks[same[-1]].end()
+        new = text[:insert_at] + ",\n" + block + text[insert_at:]
+        label = new_type
+    else:
+        # New group: open it in canonical order, set off by a blank line. Insert
+        # after the last board whose type ranks at or before the new one.
+        before = [i for i, b in enumerate(boards) if rank(b.get("type")) <= rank(new_type)]
+        if before:
+            insert_at = arr_start + blocks[before[-1]].end()
+            new = text[:insert_at] + ",\n\n" + block + text[insert_at:]
+        else:  # ranks before every existing board → first group in the array
+            insert_at = arr_start + 1  # just after the opening "["
+            new = text[:insert_at] + "\n" + block + ",\n" + text[insert_at:]
+        label = f"(new '{new_type}' group)"
+
     json.loads(new)  # validate before writing
     CONFIG_PATH.write_text(new)
-    return new_type if same else "(new group, at end)", len(same) + 1
+    return label, len(same) + 1
 
 
 def _verify(entry):
@@ -454,7 +478,7 @@ def _verify(entry):
     return len(jobs), error
 
 
-def _handle_one(url, name, do_add, force):
+def _handle_one(url, name, do_add):
     """Probe one URL, print its report, optionally add it. Returns a one-line
     status string for the batch summary."""
     res = probe(url)
@@ -496,13 +520,11 @@ def _handle_one(url, name, do_add, force):
     # so only an error blocks the add. 0 jobs is surfaced as a heads-up.
     print("\n  Verifying (fetching the board the same way jobwatch will)...")
     n, error = _verify(res["config"])
-    if error and not force:
-        print(f"  Not added: board returned an error — {error}.  (use --force to add anyway)")
+    if error:
+        print(f"  Not added: board returned an error — {error}.")
         return f"{res['type']} (NOT added: error — {error})"
 
-    if error:
-        note = f"errored ({error}) — added with --force"
-    elif n == 0:
+    if n == 0:
         note = "fetched 0 jobs — board is reachable but has no postings right now"
     else:
         note = f"fetched {n} job{'s' if n != 1 else ''}"
@@ -513,12 +535,14 @@ def _handle_one(url, name, do_add, force):
 
 
 def _split_named(line):
-    """Parse the explicit `Display Name, https://url` form. Returns (name, url)
-    when a line has a name followed by ', ' then a URL, else (None, None) so the
-    caller falls back to plain URL extraction. A leading Markdown bullet/quote is
-    stripped, and a "name" that is itself a URL is rejected (so a bare line or one
+    """Parse the explicit `Display Name <sep> https://url` form, where <sep> is a
+    comma+space (`Acme, https://...`), a tab, or two-or-more spaces — so a pasted
+    `Name<TAB>url` / `Name   url` list pins the name just like the comma form does.
+    Returns (name, url), else (None, None) so the caller falls back to plain URL
+    extraction. A leading Markdown bullet/quote is stripped, and a "name" that is
+    itself a URL is rejected (so a bare line, a single-space prose line, or one
     with several URLs isn't misread as named)."""
-    m = re.match(r'\s*(?:[-*>]\s+)?(.+?)\s*,\s+(https?://\S+)\s*$', line)
+    m = re.match(r'\s*(?:[-*>]\s+)?(.+?)(?:\s*,\s+|\t+| {2,})\s*(https?://\S+)\s*$', line)
     if not m:
         return None, None
     name = m.group(1).strip().strip('"\'')
@@ -565,13 +589,11 @@ def _collect_entries(args):
 def main():
     ap = argparse.ArgumentParser(description="Detect which ATS one or more careers URLs run on.")
     ap.add_argument("urls", nargs="*",
-                    help="Careers URLs, or 'Display Name, https://url' to pin the name")
+                    help="Careers URLs, or 'Name, url' / 'Name<TAB>url' to pin the name")
     ap.add_argument("--file", help="Read URLs (or 'Name, url' lines) from a file ('-' for stdin)")
     ap.add_argument("--name", help="Display name (only applied when given a single URL)")
     ap.add_argument("--add", action="store_true",
                     help="Add to config.json — only boards that fetch without error")
-    ap.add_argument("--force", action="store_true",
-                    help="With --add, add even if a board errors")
     args = ap.parse_args()
 
     entries = _collect_entries(args)
@@ -584,7 +606,7 @@ def main():
     for name, url in entries:
         try:
             # Inline 'Name, url' wins; --name covers the single-URL no-inline case.
-            status = _handle_one(url, name or args.name, args.add, args.force)
+            status = _handle_one(url, name or args.name, args.add)
         except Exception as e:  # never let one bad URL sink the batch
             print(f"\n  URL:      {url}\n  ERROR: {e}")
             status = f"ERROR: {e}"

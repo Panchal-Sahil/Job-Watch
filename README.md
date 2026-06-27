@@ -4,7 +4,7 @@ Polls company **ATS career boards** directly and prints jobs that match your
 filters. Remembers what it has already shown you, so each run only surfaces
 what's **new** since last time. Terminal-only, no accounts, no database.
 
-Supports 14 ATS platforms. Other types plug in as small adapters.
+Supports 15 ATS platforms. Other types plug in as small adapters.
 
 | ATS | URL looks like | config `type` |
 |-----|----------------|---------------|
@@ -22,12 +22,21 @@ Supports 14 ATS platforms. Other types plug in as small adapters.
 | UKG/UltiPro | `recruiting.ultipro.ca/<TENANT>/JobBoard/<guid>/` | `ukg` |
 | Dayforce | `jobs.dayforcehcm.com/<locale>/<namespace>/<board>` | `dayforce` |
 | iCIMS | `<sub>.icims.com/jobs/search` | `icims` |
+| Eightfold | `<host>/careers?...&pid=...&sort_by=...` (page has `pcsxConfig`) | `eightfold` |
 
 - **Greenhouse/Lever/Ashby**: slug is read from the last path segment; override
   with `"token"`/`"company"`/`"board"`.
 - **Phenom**: reads the site's `phApp` config off the page, then queries its
   `/widgets` API with early-careers keywords (intern/co-op/student/...). Override
   the search terms per board with `"query": ["intern", ...]`.
+- **Eightfold**: reads the page's CSRF token + API domain, then pages the
+  `/api/pcsx/search` JSON endpoint. Like Phenom it searches early-careers keywords
+  (so it doesn't pull the whole company); override per board with `"query"`. If
+  the API domain can't be read from the page, pin it with `"domain": "company.com"`.
+
+The keyword-driven adapters (Phenom, Eightfold) share one default keyword list,
+set once at the top level of `config.json` as `"query_terms"`. A board's own
+`"query"` overrides it; leave a board's `query` unset to use the shared list.
 - **SuccessFactors**: hits the `tile-search-results` endpoint and *preserves the
   board URL's own query string* — so put the company's Canada/student facet
   params right in the URL and they're applied server-side.
@@ -64,11 +73,14 @@ python3 probe.py --file urls.txt --add                   # batch from a file ('-
 python3 probe.py --file companies.md --add               # ...including a Markdown file
 ```
 
-Give a name inline as `Display Name, https://url` (one per line in a `--file`,
-or as a quoted positional arg). When present it **pins** the config entry's name
-so probe never has to guess it from the domain — handy for boards whose host is
-an opaque tenant slug (`fil` → "Fidelity Canada", `ejia` → "S&C Electric"). Lines
-without a name still work exactly as before (the name is guessed/looked up).
+Give a name inline as `Display Name, https://url` — or separate the two with a
+**tab or 2+ spaces** (`Display Name<TAB>https://url`), so a pasted `Name<TAB>url`
+list drops straight into a `--file`. One entry per line in a `--file`, or as a
+quoted positional arg. When present it **pins** the config entry's name so probe
+never has to guess it from the domain — handy for boards whose host is an opaque
+tenant slug (`fil` → "Fidelity Canada", `ejia` → "S&C Electric"). A single space
+between name and URL does *not* pin (so prose like "apply at https://…" isn't
+misread); lines without a name still work as before (the name is guessed/looked up).
 
 With several URLs it processes each, then prints a summary; `--add` adds every one
 that verifies. `--name` only applies to a single URL. `--file` pulls every http(s)
@@ -85,10 +97,10 @@ the slug from the domain (low-confidence — verify the listed jobs are the righ
 company). `--add` first **verifies the board actually works** — it runs the same
 fetch jobwatch will and adds it as long as the fetch **succeeds** (a reachable
 board with zero current postings is still valid and gets added, with a note); it
-only refuses if the fetch **errors** (use `--force` to add anyway). When it adds,
-it inserts the entry into `config.json` **at the end of its ATS group** (the file
-keeps each `type` in one contiguous block), preserving the file's style. It never
-adds a type with no adapter.
+refuses if the fetch **errors** (a board that errors would just fail every run).
+When it adds, it inserts the entry into `config.json` **in its ATS group** (the file
+keeps each `type` in one contiguous block, in canonical adapter order), preserving
+the file's style. It never adds a type with no adapter.
 
 ## Adding a board
 
