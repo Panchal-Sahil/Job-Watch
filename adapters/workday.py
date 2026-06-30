@@ -8,6 +8,26 @@ import requests
 
 from adapters.common import HEADERS
 
+# Workday's list endpoint collapses a posting tied to several offices into a count
+# placeholder ("2 Locations") instead of city names — which defeats location filters.
+_MULTI_LOC_RE = re.compile(r"^\d+\s+locations?$", re.IGNORECASE)
+
+
+def _resolve_locations(host, tenant, site, ext):
+    """Fetch a single job's detail endpoint and return its real locations joined as
+    "City A, City B". Returns "" on any failure so the caller keeps the placeholder."""
+    try:
+        detail = f"https://{host}/wday/cxs/{tenant}/{site}{ext}"
+        resp = requests.get(detail, headers=HEADERS, timeout=30)
+        resp.raise_for_status()
+        info = resp.json().get("jobPostingInfo", {})
+        locs = [info.get("location", "").strip()] + [
+            loc.strip() for loc in info.get("additionalLocations", [])
+        ]
+        return ", ".join(loc for loc in locs if loc)
+    except Exception:
+        return ""
+
 
 def fetch_workday(board):
     """Fetch all postings from one Workday board.
@@ -56,11 +76,19 @@ def fetch_workday(board):
         for p in postings:
             ext = p.get("externalPath", "")
             bullets = p.get("bulletFields") or [ext]
+            location = p.get("locationsText", "").strip()
+            # Resolve "N Locations" placeholders to real city names (one extra
+            # request per affected posting) when enabled in config.
+            if ext and board.get("resolve_multi_location") and _MULTI_LOC_RE.match(location):
+                resolved = _resolve_locations(host, tenant, site, ext)
+                if resolved:
+                    location = resolved
+                time.sleep(0.5)  # be polite about the extra detail fetch
             jobs.append(
                 {
                     "id": f"{tenant}:{bullets[0]}",
                     "title": p.get("title", "").strip(),
-                    "location": p.get("locationsText", "").strip(),
+                    "location": location,
                     "posted": p.get("postedOn", "").strip(),
                     "url": f"https://{host}{ext}" if ext else url,
                     "company": company,
