@@ -11,3 +11,7 @@ baseline.timing
 
 # probe.py scratch input list
 probe-list.md
+
+# Local-only files (kept on disk, not tracked)
+CLAUDE.md
+.python-version
