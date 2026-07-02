@@ -151,6 +151,19 @@ def _default_query_terms():
     return _DEFAULT_QUERY
 
 
+_RESOLVE_MULTI_LOC = None
+
+
+def _resolve_multi_location():
+    """Top-level config flag. When true, adapters that get a placeholder location
+    like Workday's "2 Locations" resolve it to the real city names via the per-job
+    detail endpoint. Centralized in config.json so the behavior is one switch."""
+    global _RESOLVE_MULTI_LOC
+    if _RESOLVE_MULTI_LOC is None:
+        _RESOLVE_MULTI_LOC = bool(load_json(CONFIG_PATH, {}).get("resolve_multi_location", False))
+    return _RESOLVE_MULTI_LOC
+
+
 def fetch_board(board):
     """Fetch one board. Returns (name, jobs, error) — never raises, so one bad
     board can't sink the whole run. Safe to call from worker threads."""
@@ -162,6 +175,10 @@ def fetch_board(board):
     # Supply the shared early-careers search terms unless the board pins its own.
     if "query" not in board and _default_query_terms():
         board = {**board, "query": _default_query_terms()}
+    # Supply the global multi-location resolution flag unless the board pins its own,
+    # so the policy lives in config.json (top-level) but stays per-board overridable.
+    if "resolve_multi_location" not in board and _resolve_multi_location():
+        board = {**board, "resolve_multi_location": True}
     try:
         return name, adapter(board), None
     except Exception as e:
