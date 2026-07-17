@@ -22,9 +22,9 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters import (ashby, bamboohr, dayforce, greenhouse, icims, lever,
-                      oracle, rippling, smartrecruiters, successfactors, ukg,
-                      workday)
+from adapters import (ashby, bamboohr, dayforce, eightfold, greenhouse, icims,
+                      lever, oracle, phenom, radancy, rippling, smartrecruiters,
+                      successfactors, ukg, workday)
 from tests.fakehttp import FakeRequests, jresp
 
 REQUIRED_KEYS = {"id", "title", "location", "posted", "url", "company"}
@@ -360,6 +360,165 @@ class TestSuccessFactorsModern(AdapterTestCase):
              ("POST", "/services/recruiting/v1/jobs", jresp(status=404, text="nope")),
              ("GET", "careers.acme.com/tile-search-results", jresp(text="<html></html>"))])
         self.assertEqual(jobs, [])
+        self.assertTrue(any("tile-search-results" in c[1] for c in fake.calls))
+
+
+class TestPhenom(AdapterTestCase):
+    """HTML-config scraper: reads the `var phApp` object off the landing page for
+    the widget endpoint, then pages the /widgets JSON API."""
+
+    LANDING = ('<html><head><script>var phApp = {"widgetApiEndpoint": '
+               '"https://careers.acme.com/api/widgets", "locale": "en_CA", '
+               '"country": "canada", "pageId": "page1"};</script></head></html>')
+
+    def _job(self, i):
+        return {"jobId": f"J{i}", "title": "Software &amp; Data Intern",
+                "cityStateCountry": "Toronto, ON, Canada",
+                "postedDate": "2026-01-15", "applyUrl": f"https://careers.acme.com/job/J{i}"}
+
+    def test_reads_config_and_pages(self):
+        def widgets(url, **kw):
+            frm = kw["json"]["from"]
+            if frm == 0:
+                jobs = [self._job(i) for i in range(100)]
+                return jresp(payload={"refineSearch": {"totalHits": 130, "data": {"jobs": jobs}}})
+            jobs = [self._job(i) for i in range(100, 130)]
+            return jresp(payload={"refineSearch": {"totalHits": 130, "data": {"jobs": jobs}}})
+
+        jobs, fake = self.run_adapter(
+            phenom, phenom.fetch_phenom,
+            {"url": "https://careers.acme.com/careers"},
+            [("GET", "careers.acme.com/careers", jresp(text=self.LANDING)),
+             ("POST", "careers.acme.com/api/widgets", widgets)])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 130)
+        self.assertEqual(jobs[0]["id"], "phenom:careers.acme.com:J0")
+        self.assertEqual(jobs[0]["title"], "Software & Data Intern")  # html-unescaped
+        self.assertEqual(len([c for c in fake.calls if c[0] == "POST"]), 2)
+
+
+class TestEightfold(AdapterTestCase):
+    """PCSX site: pulls _csrf token + API domain from the landing HTML, then pages
+    /api/pcsx/search (10 per page)."""
+
+    LANDING = ('<html><head><meta name="_csrf" content="csrf-tok">'
+               '<script>{"domain":"acme.com"}</script></head></html>')
+
+    def _pos(self, i):
+        return {"id": i, "name": f"Job {i}", "locations": ["Toronto, ON", "Remote"],
+                "postedTs": 1704067200, "positionUrl": f"/careers/job/{i}"}
+
+    def test_reads_csrf_domain_and_pages(self):
+        def search(url, **kw):
+            start = kw["params"]["start"]
+            if start == 0:
+                return jresp(payload={"data": {"count": 15,
+                                               "positions": [self._pos(i) for i in range(10)]}})
+            return jresp(payload={"data": {"count": 15,
+                                           "positions": [self._pos(i) for i in range(10, 15)]}})
+
+        jobs, fake = self.run_adapter(
+            eightfold, eightfold.fetch_eightfold,
+            {"url": "https://careers.acme.com/careers"},
+            [("GET", "careers.acme.com/api/pcsx/search", search),
+             ("GET", "careers.acme.com/careers", jresp(text=self.LANDING))])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 15)
+        self.assertEqual(jobs[0]["id"], "ef:acme.com:0")
+        self.assertEqual(jobs[0]["location"], "Toronto, ON; Remote")
+        self.assertEqual(jobs[0]["posted"], "2024-01-01")
+
+    def test_missing_csrf_raises(self):
+        with self.assertRaises(RuntimeError):
+            self.run_adapter(
+                eightfold, eightfold.fetch_eightfold,
+                {"url": "https://careers.acme.com/careers"},
+                [("GET", "careers.acme.com/careers", jresp(text="<html>no token</html>"))])
+
+
+class TestRadancy(AdapterTestCase):
+    """Server-rendered HTML search page, paged with ?p=N. Covers both templates:
+    old (data-title attr, location span inside the <a>) and new (title is the link
+    text, location is a sibling span after the </a>)."""
+
+    PAGE1 = (
+        '<a data-job-id="J1" data-title="Software Intern &amp; Co-op" href="/job/J1">'
+        '<span class="job-location">Toronto, ON</span></a>'
+        '<a data-job-id="J2" href="/job/J2">Data Analyst</a>'
+        '<span class="job-location">Montreal, QC</span>')
+
+    def test_parses_both_templates_and_stops(self):
+        def route(url, **kw):
+            return jresp(text=self.PAGE1 if "p=1" in url else "<html>no jobs</html>")
+
+        jobs, fake = self.run_adapter(
+            radancy, radancy.fetch_radancy,
+            {"url": "https://careers.acme.com/search-jobs?orgIds=123"},
+            [("GET", "careers.acme.com/search-jobs", route)])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 2)
+        self.assertEqual(jobs[0]["id"], "radancy:careers.acme.com:J1")
+        self.assertEqual(jobs[0]["title"], "Software Intern & Co-op")  # data-title, unescaped
+        self.assertEqual(jobs[0]["location"], "Toronto, ON")
+        self.assertEqual(jobs[1]["title"], "Data Analyst")            # link-text template
+        self.assertEqual(jobs[1]["location"], "Montreal, QC")         # sibling span
+        self.assertGreaterEqual(len([c for c in fake.calls if c[0] == "GET"]), 2)
+
+
+class TestICIMSClassic(AdapterTestCase):
+    """Classic *.icims.com portal: server-rendered job cards over a 'Page N of M'
+    paginated iframe view."""
+
+    def _card(self, jid):
+        return (
+            '<li class="iCIMS_JobCardItem">'
+            f'<a href="https://careersen-acme.icims.com/jobs/{jid}/software-intern/job?in_iframe=1">'
+            '<h3>Software Intern</h3></a>'
+            '<span class="field-label">Job Locations</span> <span > Toronto, ON </span>'
+            '<span>Posted Date</span> <span title="6/25/2026 2:33 PM">2 days ago</span>'
+            '</li>')
+
+    def test_pages_via_page_count(self):
+        def route(url, **kw):
+            pr = kw["params"]["pr"]
+            if pr == 0:
+                return jresp(text="<p>Page 1 of 2</p>" + self._card("12345"))
+            return jresp(text=self._card("67890"))
+
+        jobs, fake = self.run_adapter(
+            icims, icims.fetch_icims,
+            {"url": "https://careersen-acme.icims.com/jobs/search"},
+            [("GET", "careersen-acme.icims.com/jobs/search", route)])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 2)  # Page 1 of 2 -> two fetches
+        self.assertEqual(jobs[0]["id"], "icims:acme:12345")  # careersen- prefix stripped
+        self.assertEqual(jobs[0]["title"], "Software Intern")
+        self.assertEqual(jobs[0]["location"], "Toronto, ON")
+        self.assertEqual(jobs[0]["posted"], "2026-06-25")
+        self.assertEqual(jobs[0]["url"], "https://careersen-acme.icims.com/jobs/12345/software-intern/job")
+        self.assertEqual(len([c for c in fake.calls if c[0] == "GET"]), 2)
+
+
+class TestSuccessFactorsClassic(AdapterTestCase):
+    """Classic RMK tile scrape — reached when the modern API page-0 POST fails."""
+
+    TILES = (
+        '<li class="job-tile job-id-12345" data-url="/job/Toronto-ON/12345/">'
+        '<span class="section-title title">Software Intern</span>'
+        '<span class="job-location">Toronto, ON</span></li>')
+
+    def test_falls_back_and_parses_tiles(self):
+        jobs, fake = self.run_adapter(
+            successfactors, successfactors.fetch_successfactors,
+            {"name": "Acme", "url": "https://careers.acme.com/search/"},
+            [("GET", "careers.acme.com/search", jresp(text="ok")),          # modern warm-up
+             ("POST", "/services/recruiting/v1/jobs", jresp(status=404)),   # not modern
+             ("GET", "tile-search-results", jresp(text=self.TILES))])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["id"], "sf:careers.acme.com:12345")
+        self.assertEqual(jobs[0]["title"], "Software Intern")
+        self.assertEqual(jobs[0]["location"], "Toronto, ON")
         self.assertTrue(any("tile-search-results" in c[1] for c in fake.calls))
 
 
