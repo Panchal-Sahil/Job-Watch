@@ -32,6 +32,14 @@ class TestHostMatch(unittest.TestCase):
         self.assertEqual(res.confidence, "high")
         self.assertEqual(res.config["type"], "workday")
 
+    def test_successfactors_host_high_confidence(self):
+        # SAP-hosted RMK career sites live on *.sapsf.com — a host match.
+        res = run_probe("https://career17.sapsf.com/career?company=acme&site=xyz",
+                        [("career17.sapsf.com", page("<html>jobs</html>"))])
+        self.assertEqual(res.type, "successfactors")
+        self.assertEqual(res.confidence, "high")
+        self.assertEqual(res.config["type"], "successfactors")
+
     def test_greenhouse_host_reads_slug_from_path(self):
         res = run_probe(
             "https://job-boards.greenhouse.io/acmeco",
@@ -63,6 +71,20 @@ class TestEmbeddedSignature(unittest.TestCase):
             [("careers.example-corp.com", page(html))],
             default=api({}, status=404))  # all confirmer calls fail
         self.assertNotEqual(res.type, "greenhouse")
+
+    def test_successfactors_signature_supported(self):
+        # White-labeled RMK/CSB career sites embed successfactors.com CDN refs. SF is
+        # a supported type (has an adapter) detected by HTML signature, not by an
+        # active API confirmer — so it must resolve to type 'successfactors', not the
+        # recognized-but-unsupported path it used to fall into.
+        html = '<script src="https://performancemanager8.successfactors.com/x.js"></script>'
+        res = run_probe("https://careers.deloitte.ca/search/",
+                        [("careers.deloitte.ca", page(html))],
+                        default=api({}, status=404))
+        self.assertEqual(res.type, "successfactors")
+        self.assertIsNone(res.other)
+        self.assertEqual(res.config["type"], "successfactors")
+        self.assertIn("successfactors", probe.SUPPORTED_TYPES)
 
     def test_phenom_signature_no_confirmer(self):
         html = "<script>var phApp = {};</script>"
