@@ -28,6 +28,7 @@ HOST_RULES = [
     ("dayforce", r"(^|\.)jobs\.dayforcehcm\.com$"),
     ("oracle", r"\.oraclecloud\.com$"),
     ("radancy", r"\.talentbrew\.com$|\.tbcdn\.talentbrew"),
+    ("successfactors", r"\.sapsf\.com$|\.successfactors\.com$"),
 ]
 
 # (type, html-regex, slug-capture-regex-or-None). Looked for in the page HTML to
@@ -57,6 +58,7 @@ HTML_SIGNATURES = [
     ("bamboohr", r"\.bamboohr\.com", None),
     ("rippling", r"ats\.rippling\.com", None),
     ("ukg", r"\.ultipro\.(?:com|ca)|recruiting\.ultipro", None),
+    ("successfactors", r"successfactors\.com|rmkcdn|/sfcareer/", None),
     ("workday", r"\.myworkdayjobs\.com|\.myworkdaysite\.com", None),
 ]
 
@@ -76,7 +78,6 @@ OTHER_ATS = [
     ("Paylocity", r"recruiting\.paylocity\.com"),
     ("ADP Workforce Now", r"workforcenow\.adp\.com|recruiting\.adp\.com"),
     ("Oracle Taleo", r"taleo\.net|tbe\.taleo"),
-    ("SAP SuccessFactors (RMK)", r"successfactors\.com|/sfcareer/|rmkcdn"),
     ("Jobylon", r"jobylon\.com"),
     ("Personio", r"\.jobs\.personio\."),
     ("Pinpoint", r"pinpointhq\.com"),
