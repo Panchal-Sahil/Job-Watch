@@ -77,16 +77,23 @@ def _fetch_modern(url, netloc, company):
                            "pageNumber": page, "sortBy": "recent"})
         r = sess.post(api, headers={"Content-Type": "application/json"},
                       data=body, timeout=30)
-        # Classic sites answer this path with 401/404 and no results block — the
-        # signal to abandon the modern path and let the caller scrape tiles.
-        if not r.ok:
-            return None
-        try:
-            data = r.json()
-        except ValueError:
-            return None
-        if not isinstance(data, dict) or "jobSearchResult" not in data:
-            return None
+        # A failure *on page 0* means this isn't a modern site (classic sites 401/404
+        # this path, or answer without the results block) — return None so the caller
+        # scrapes tiles. But once page 0 has proven the site modern, the same symptoms
+        # on a *later* page just mean we've paged past the end (some tenants drop the
+        # `jobSearchResult` key past the last page) — break and keep what we collected,
+        # never discard it by returning None.
+        bad = (not r.ok)
+        data = None
+        if not bad:
+            try:
+                data = r.json()
+            except ValueError:
+                bad = True
+        if not bad and (not isinstance(data, dict) or "jobSearchResult" not in data):
+            bad = True
+        if bad:
+            return None if page == 0 else jobs
         results = data["jobSearchResult"] or []
         new = 0
         for item in results:
