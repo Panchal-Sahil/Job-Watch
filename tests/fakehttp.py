@@ -60,3 +60,72 @@ def page(text, status=200):
 def api(payload, status=200):
     """A JSON API response (for the confirmer endpoints)."""
     return lambda url: FakeResponse(url=url, status=status, payload=payload)
+
+
+# --- Adapter-level HTTP fake -------------------------------------------------
+# The adapters (unlike probe) call `requests.get`/`requests.post` and
+# `requests.Session()` directly on the module, and several page through a JSON
+# API or run a multi-request handshake. `FakeRequests` stands in for the whole
+# `requests` module (patched as `adapters.<name>.requests`) and routes every
+# call — module-level or via a Session it hands out — through one shared table.
+
+
+class RequestException(Exception):
+    """Stand-in for requests.RequestException (successfactors catches it)."""
+
+
+class FakeRequests:
+    """A stand-in for the `requests` module for adapter tests. Routes get/post by
+    (method, url-substring) to a canned response or a callable. Rules are a list of
+    `(method, needle, target)` where method is "GET"/"POST"/"*", and target is a
+    FakeResponse (returned as-is) or a callable `(url, **kwargs) -> FakeResponse` —
+    the kwargs carry `json=`/`params=`/`data=`, so a rule can return a different
+    page per request body. The same table backs module-level get/post and every
+    Session() it hands out, so a landing-GET -> csrf-GET -> search-POST handshake is
+    scripted in one place. First matching rule wins."""
+
+    RequestException = RequestException
+
+    def __init__(self, rules, default=None):
+        self.rules = rules
+        self.default = default
+        self.calls = []  # list of (method, url, kwargs)
+
+    def _route(self, method, url, **kw):
+        self.calls.append((method, url, kw))
+        for m, needle, target in self.rules:
+            if m in ("*", method) and needle in url:
+                return target(url, **kw) if callable(target) else target
+        if self.default is not None:
+            return self.default(url, **kw) if callable(self.default) else self.default
+        raise AssertionError(f"FakeRequests: no {method} rule for {url}")
+
+    def get(self, url, **kw):
+        return self._route("GET", url, **kw)
+
+    def post(self, url, **kw):
+        return self._route("POST", url, **kw)
+
+    def Session(self):
+        return _FakeReqSession(self)
+
+
+class _FakeReqSession:
+    """Session handed out by FakeRequests.Session(). Shares the parent's route table
+    and exposes a mutable `.headers` dict (adapters do `sess.headers[k] = v`)."""
+
+    def __init__(self, parent):
+        self._parent = parent
+        self.headers = {}
+
+    def get(self, url, **kw):
+        return self._parent._route("GET", url, **kw)
+
+    def post(self, url, **kw):
+        return self._parent._route("POST", url, **kw)
+
+
+def jresp(payload=None, text="", status=200):
+    """A static JSON/text response usable directly as a route target (no lambda —
+    FakeRequests returns non-callable targets as-is, so kwargs don't matter)."""
+    return FakeResponse(status=status, text=text, payload=payload)
