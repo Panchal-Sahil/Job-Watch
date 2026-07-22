@@ -9,8 +9,8 @@ open-for-extension: a new platform is a new row, not a new branch.
 # Types we have a working adapter for (must stay in sync with jobwatch.ADAPTERS).
 SUPPORTED_TYPES = {
     "workday", "greenhouse", "lever", "ashby", "phenom", "successfactors",
-    "oracle", "radancy", "smartrecruiters", "bamboohr", "rippling", "ukg",
-    "dayforce", "icims", "eightfold",
+    "oracle", "radancy", "smartrecruiters", "bamboohr", "rippling", "ripplematch",
+    "ukg", "dayforce", "icims", "eightfold",
 }
 
 # (type, host-regex). Matched against the final (post-redirect) URL's host and
@@ -24,6 +24,7 @@ HOST_RULES = [
     ("smartrecruiters", r"(^|\.)careers\.smartrecruiters\.com$|(^|\.)jobs\.smartrecruiters\.com$"),
     ("bamboohr", r"\.bamboohr\.com$"),
     ("rippling", r"(^|\.)ats\.rippling\.com$"),
+    ("ripplematch", r"(^|\.)app\.ripplematch\.com$"),
     ("ukg", r"\.ultipro\.(com|ca)$|recruiting\.ultipro"),
     ("dayforce", r"(^|\.)jobs\.dayforcehcm\.com$"),
     ("oracle", r"\.oraclecloud\.com$"),

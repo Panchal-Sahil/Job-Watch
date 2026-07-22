@@ -40,6 +40,18 @@ class TestHostMatch(unittest.TestCase):
         self.assertEqual(res.confidence, "high")
         self.assertEqual(res.config["type"], "successfactors")
 
+    def test_ripplematch_host_pins_company_name_from_title(self):
+        # app.ripplematch.com is a host match; the adapter filters its API by the
+        # exact display name, so probe must pin it (from <title>) into `company`.
+        title = ("<title>Jobs, Internships &amp; Careers - Palo Alto Networks "
+                 "| RippleMatch</title>")
+        res = run_probe(
+            "https://app.ripplematch.com/v2/public/company/palo-alto-networks",
+            [("app.ripplematch.com", page(f"<html><head>{title}</head></html>"))])
+        self.assertEqual(res.type, "ripplematch")
+        self.assertEqual(res.confidence, "high")
+        self.assertEqual(res.config["company"], "Palo Alto Networks")
+
     def test_greenhouse_host_reads_slug_from_path(self):
         res = run_probe(
             "https://job-boards.greenhouse.io/acmeco",

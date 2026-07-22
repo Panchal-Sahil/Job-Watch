@@ -6,6 +6,7 @@ a dict describing the detection plus a ready-to-paste config.json board entry.
 """
 
 import re
+from html import unescape
 from urllib.parse import urlparse
 
 import requests
@@ -65,6 +66,21 @@ def _path_slug(url):
     if segs and re.fullmatch(r"[a-z]{2}-[A-Z]{2}", segs[0]):
         segs = segs[1:]
     return segs[-1] if segs else None
+
+
+def _ripplematch_name(page_html, url):
+    """RippleMatch's exact company display name — the value its jobs API filters
+    on. Prefer the page title ('... Careers - <Name> | RippleMatch' in <title> or
+    og:title); fall back to the URL slug titleized (app.ripplematch.com/v2/public/
+    company/<slug>). The name lands in the board's `company` field, so getting it
+    right is what makes the board actually fetch."""
+    for pat in (r'og:title"\s+content="[^"]*?[-–]\s*(.+?)\s*\|\s*RippleMatch',
+                r'<title[^>]*>[^<]*?[-–]\s*(.+?)\s*\|\s*RippleMatch'):
+        m = re.search(pat, page_html, re.I)
+        if m:
+            return unescape(m.group(1)).strip()
+    slug = _path_slug(url)
+    return slug.replace("-", " ").title() if slug else None
 
 
 def probe(url):
@@ -170,6 +186,8 @@ def _confirm_and_build(sess, res, url, html):
                     res.job_count = n
                     res.evidence += f" — slug '{cand}' confirmed via API ({n} jobs)"
                     break
+    if atype == "ripplematch" and not res.api_name:
+        res.api_name = _ripplematch_name(html, url)
     _augment_name(sess, res)
     _build_config(res, url, res.slug)
 
@@ -208,6 +226,11 @@ def _build_config(res, url, slug):
         segs = [s for s in urlparse(url).path.split("/") if s]
         if segs:
             entry["company"] = segs[0]
+        entry["url"] = url
+    elif atype == "ripplematch":
+        # The adapter filters the API by exact company display name — pin it (from
+        # the page title, resolved into api_name) rather than the opaque URL slug.
+        entry["company"] = res.api_name or name
         entry["url"] = url
     else:
         entry["url"] = url

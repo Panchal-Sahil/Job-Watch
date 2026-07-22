@@ -23,8 +23,8 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from adapters import (ashby, bamboohr, dayforce, eightfold, greenhouse, icims,
-                      lever, oracle, phenom, radancy, rippling, smartrecruiters,
-                      successfactors, ukg, workday)
+                      lever, oracle, phenom, radancy, ripplematch, rippling,
+                      smartrecruiters, successfactors, ukg, workday)
 from tests.fakehttp import FakeRequests, jresp
 
 REQUIRED_KEYS = {"id", "title", "location", "posted", "url", "company"}
@@ -135,6 +135,56 @@ class TestRippling(AdapterTestCase):
         self.assert_contract(jobs)
         self.assertEqual(jobs[0]["id"], "rippling:acme:u1")
         self.assertEqual(jobs[0]["location"], "Toronto")
+
+
+class TestRippleMatch(AdapterTestCase):
+    def _job(self, jid, company, role="Engineer"):
+        return {"id": jid, "companyName": company, "roleName": role,
+                "locations": ["Santa Clara, CA, USA"], "locationType": "Hybrid",
+                "postedDate": "2026-06-04T14:13:03.357272",
+                "applyUrl": f"https://app.ripplematch.com/v2/public/job/{jid}"}
+
+    def test_pages_filters_by_company_and_stops(self):
+        def route(url, **kw):
+            page = kw["params"]["page"]
+            if page == 1:
+                # A leaked other-company row (server filter is a name *search*)
+                # must be dropped; has_next drives the second page.
+                jobs = [self._job("a1", "Palo Alto Networks"),
+                        self._job("x9", "Palo Alto Software")]
+                return jresp(payload={"jobs": jobs, "pagination": {
+                    "page": 1, "per_page": 20, "total_items": 3, "has_next": True}})
+            jobs = [self._job("a2", "Palo Alto Networks")]
+            return jresp(payload={"jobs": jobs, "pagination": {
+                "page": 2, "per_page": 20, "total_items": 3, "has_next": False}})
+
+        jobs, fake = self.run_adapter(
+            ripplematch, ripplematch.fetch_ripplematch,
+            {"name": "Palo Alto", "company": "Palo Alto Networks",
+             "url": "https://app.ripplematch.com/v2/public/company/palo-alto-networks"},
+            [("GET", "app.ripplematch.com/api/public/jobs/unified", route)])
+        self.assert_contract(jobs)
+        self.assertEqual([j["id"] for j in jobs],
+                         ["ripplematch:a1", "ripplematch:a2"])  # x9 filtered out
+        self.assertEqual(jobs[0]["url"],
+                         "https://app.ripplematch.com/v2/public/job/a1")
+        self.assertEqual(jobs[0]["posted"], "2026-06-04")
+        self.assertEqual(len([c for c in fake.calls if c[0] == "GET"]), 2)
+
+    def test_no_company_raises(self):
+        with self.assertRaises(ValueError):
+            ripplematch.fetch_ripplematch({"url": "https://app.ripplematch.com/x"})
+
+    def test_refuses_unnarrowed_universe(self):
+        # If the company filter silently stops applying, total_items balloons —
+        # the adapter must bail loudly, not page millions of rows.
+        big = jresp(payload={"jobs": [], "pagination": {
+            "page": 1, "total_items": 2262689, "has_next": True}})
+        with self.assertRaises(ValueError):
+            self.run_adapter(
+                ripplematch, ripplematch.fetch_ripplematch,
+                {"company": "Acme", "url": "https://app.ripplematch.com/x"},
+                [("GET", "app.ripplematch.com/api/public/jobs/unified", big)])
 
 
 class TestSmartRecruiters(AdapterTestCase):
