@@ -234,6 +234,50 @@ class TestOracle(AdapterTestCase):
         self.assertEqual(jobs[0]["id"], "oracle:acme.fa.ca2.oraclecloud.com:0")
         self.assertEqual(len([c for c in fake.calls if c[0] == "GET"]), 2)
 
+    def test_vanity_host_resolved_from_page(self):
+        """A vanity domain can't serve the API; the real *.oraclecloud.com host is
+        resolved up front from the page HTML, and the API is hit on THAT host."""
+        page = ('<html>...var apiHost="eeho.fa.us2.oraclecloud.com";'
+                '<a href="//eeho.fa.us2.oraclecloud.com/hcmUI">...</html>')
+        reqs = [{"Id": 7, "Title": "Intern", "PrimaryLocation": "Austin, TX",
+                 "PostedDate": "2026-02-01"}]
+        jobs, fake = self.run_adapter(
+            oracle, oracle.fetch_oracle,
+            {"name": "Oracle", "url": "https://careers.oracle.com/en/sites/jobsearch/jobs"},
+            [("GET", "careers.oracle.com/hcmRestApi", jresp(text="<html>404</html>")),
+             ("GET", "eeho.fa.us2.oraclecloud.com/hcmRestApi",
+              jresp(payload={"items": [{"TotalJobsCount": 1, "requisitionList": reqs}]})),
+             ("GET", "careers.oracle.com/en/sites/jobsearch/jobs", jresp(text=page))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["id"], "oracle:eeho.fa.us2.oraclecloud.com:7")
+        # Proactive resolve means the vanity /hcmRestApi is never even called.
+        api_hosts = [u for m, u, _ in fake.calls if "/hcmRestApi" in u]
+        self.assertTrue(api_hosts and all("oraclecloud.com" in u for u in api_hosts),
+                        "API must be hit on the resolved oraclecloud host")
+
+    def test_stale_pinned_pod_self_heals(self):
+        """A pinned pod that stops serving JSON (re-pointed tenant) is re-resolved
+        once from the vanity page, then the retry succeeds on the fresh host."""
+        page = '<a href="//new.fa.us2.oraclecloud.com/hcmUI">go</a>'
+        reqs = [{"Id": 3, "Title": "Intern", "PrimaryLocation": "Reston, VA",
+                 "PostedDate": "2026-02-02"}]
+        jobs, fake = self.run_adapter(
+            oracle, oracle.fetch_oracle,
+            {"name": "Akamai", "host": "old.fa.us2.oraclecloud.com",
+             "url": "https://jobs.akamai.com/en/sites/CX_1"},
+            [("GET", "old.fa.us2.oraclecloud.com/hcmRestApi", jresp(text="<html>gone</html>")),
+             ("GET", "new.fa.us2.oraclecloud.com/hcmRestApi",
+              jresp(payload={"items": [{"TotalJobsCount": 1, "requisitionList": reqs}]})),
+             ("GET", "jobs.akamai.com/en/sites/CX_1", jresp(text=page))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["id"], "oracle:new.fa.us2.oraclecloud.com:3")
+
+    def test_extract_oracle_host(self):
+        self.assertEqual(
+            oracle.extract_oracle_host('x //fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/y'),
+            "fa-extu-saasfaprod1.fa.ocs.oraclecloud.com")
+        self.assertIsNone(oracle.extract_oracle_host("<html>no host here</html>"))
+
 
 class TestUKG(AdapterTestCase):
     def test_pages_and_stops_on_total(self):

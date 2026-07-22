@@ -108,6 +108,25 @@ class TestEmbeddedSignature(unittest.TestCase):
         self.assertEqual(res.type, "phenom")
         self.assertEqual(res.confidence, "medium")
 
+    def test_oracle_vanity_pins_real_api_host(self):
+        # A vanity CE domain embeds the real *.oraclecloud.com host — probe must pin
+        # it into the entry's `host` so the board can actually fetch (the vanity host
+        # can't serve /hcmRestApi).
+        html = '<a href="//eeho.fa.us2.oraclecloud.com/hcmUI">apply</a>'
+        res = run_probe("https://careers.oracle.com/en/sites/jobsearch/jobs",
+                        [("careers.oracle.com", page(html))])
+        self.assertEqual(res.type, "oracle")
+        self.assertEqual(res.config["host"], "eeho.fa.us2.oraclecloud.com")
+
+    def test_oracle_on_ats_host_needs_no_pin(self):
+        # Already on the real oraclecloud pod — no `host` override needed.
+        html = "<html>/hcmUI/CandidateExperience</html>"
+        res = run_probe(
+            "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs",
+            [("acme.fa.us2.oraclecloud.com", page(html))])
+        self.assertEqual(res.type, "oracle")
+        self.assertNotIn("host", res.config)
+
 
 class TestGuessedSlug(unittest.TestCase):
     def test_guess_from_domain_label(self):
