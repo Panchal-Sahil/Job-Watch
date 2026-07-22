@@ -156,7 +156,7 @@ def probe(url):
                              f"returned {n} jobs — verify these are this company's",
                     note=note, slug=slug, job_count=n)
                 _augment_name(sess, res)
-                _build_config(res, url, slug)
+                _build_config(res, url, slug, html)
                 return res
 
     return DetectionResult(type=None, other=None, confidence=None,
@@ -189,7 +189,7 @@ def _confirm_and_build(sess, res, url, html):
     if atype == "ripplematch" and not res.api_name:
         res.api_name = _ripplematch_name(html, url)
     _augment_name(sess, res)
-    _build_config(res, url, res.slug)
+    _build_config(res, url, res.slug, html)
 
 
 def _augment_name(sess, res):
@@ -206,7 +206,7 @@ def _augment_name(sess, res):
             res.evidence += f" (board name: '{bn}' — confirm it's the right company)"
 
 
-def _build_config(res, url, slug):
+def _build_config(res, url, slug, html=""):
     """Attach a ready-to-paste config.json board entry to res."""
     atype = res.type
     name = res.name or res.api_name or _guess_name(url, atype, slug)
@@ -226,6 +226,17 @@ def _build_config(res, url, slug):
         segs = [s for s in urlparse(url).path.split("/") if s]
         if segs:
             entry["company"] = segs[0]
+        entry["url"] = url
+    elif atype == "oracle":
+        # Vanity CE domains (careers.oracle.com, jobs.akamai.com) proxy the UI but
+        # not the /hcmRestApi endpoint — pin the real *.oraclecloud.com API host
+        # embedded in the page so the board fetches without a per-run page lookup.
+        host = urlparse(url).netloc.lower()
+        if not host.endswith(".oraclecloud.com"):
+            from adapters.oracle import extract_oracle_host
+            real = extract_oracle_host(html)
+            if real and real != host:
+                entry["host"] = real
         entry["url"] = url
     elif atype == "ripplematch":
         # The adapter filters the API by exact company display name — pin it (from
