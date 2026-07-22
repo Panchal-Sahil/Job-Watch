@@ -26,6 +26,7 @@ from adapters.lever import fetch_lever
 from adapters.oracle import fetch_oracle
 from adapters.phenom import fetch_phenom
 from adapters.radancy import fetch_radancy
+from adapters.ripplematch import fetch_ripplematch
 from adapters.rippling import fetch_rippling
 from adapters.smartrecruiters import fetch_smartrecruiters
 from adapters.successfactors import fetch_successfactors
@@ -117,6 +118,7 @@ ADAPTERS = {
     "smartrecruiters": fetch_smartrecruiters,
     "bamboohr": fetch_bamboohr,
     "rippling": fetch_rippling,
+    "ripplematch": fetch_ripplematch,
     "ukg": fetch_ukg,
     "dayforce": fetch_dayforce,
     "icims": fetch_icims,
