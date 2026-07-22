@@ -43,10 +43,13 @@ class TestHostMatch(unittest.TestCase):
     def test_ripplematch_host_pins_company_name_from_title(self):
         # app.ripplematch.com is a host match; the adapter filters its API by the
         # exact display name, so probe must pin it (from <title>) into `company`.
+        # Slug ('pan') deliberately differs from the display name so this only
+        # passes if the <title> regex fires — the slug-titleize fallback would
+        # yield "Pan", not the exact name the jobs API needs.
         title = ("<title>Jobs, Internships &amp; Careers - Palo Alto Networks "
                  "| RippleMatch</title>")
         res = run_probe(
-            "https://app.ripplematch.com/v2/public/company/palo-alto-networks",
+            "https://app.ripplematch.com/v2/public/company/pan",
             [("app.ripplematch.com", page(f"<html><head>{title}</head></html>"))])
         self.assertEqual(res.type, "ripplematch")
         self.assertEqual(res.confidence, "high")
