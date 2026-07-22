@@ -487,15 +487,23 @@ class TestEightfold(AdapterTestCase):
 
 
 class TestRadancy(AdapterTestCase):
-    """Server-rendered HTML search page, paged with ?p=N. Covers both templates:
-    old (data-title attr, location span inside the <a>) and new (title is the link
-    text, location is a sibling span after the </a>)."""
+    """Server-rendered HTML search page, paged with ?p=N. Covers all three
+    templates: (A) data-title attr + location span inside the <a>; (B) title is the
+    link text, location is a sibling span after the </a>; (C) a job-title heading +
+    a result-location span inside the <a> (differently-named location class)."""
 
     PAGE1 = (
         '<a data-job-id="J1" data-title="Software Intern &amp; Co-op" href="/job/J1">'
         '<span class="job-location">Toronto, ON</span></a>'
         '<a data-job-id="J2" href="/job/J2">Data Analyst</a>'
-        '<span class="job-location">Montreal, QC</span>')
+        '<span class="job-location">Montreal, QC</span>'
+        '<a data-job-id="J3" href="/job/J3">'
+        '<h2 class="section29__search-results-job-title">Named Account Manager</h2>'
+        '<span class="section29__result-location">Calgary, AB</span>'
+        '<span class="section29__result-category"><span>Sales</span></span></a>'
+        '<a data-job-id="J4" href="/job/J4">Associate Analyst</a>'
+        '<div class="bottom-info-wrapper"><ul><li class="search-results-list__job-info '
+        'job-location">Toronto, Ontario</li></ul></div>')
 
     def test_parses_both_templates_and_stops(self):
         def route(url, **kw):
@@ -506,12 +514,20 @@ class TestRadancy(AdapterTestCase):
             {"url": "https://careers.acme.com/search-jobs?orgIds=123"},
             [("GET", "careers.acme.com/search-jobs", route)])
         self.assert_contract(jobs)
-        self.assertEqual(len(jobs), 2)
+        self.assertEqual(len(jobs), 4)
         self.assertEqual(jobs[0]["id"], "radancy:careers.acme.com:J1")
         self.assertEqual(jobs[0]["title"], "Software Intern & Co-op")  # data-title, unescaped
         self.assertEqual(jobs[0]["location"], "Toronto, ON")
         self.assertEqual(jobs[1]["title"], "Data Analyst")            # link-text template
         self.assertEqual(jobs[1]["location"], "Montreal, QC")         # sibling span
+        # Template C: heading title + result-location span — no bleed of the
+        # location/category text into the title, location parsed from result-location.
+        self.assertEqual(jobs[2]["title"], "Named Account Manager")
+        self.assertEqual(jobs[2]["location"], "Calgary, AB")
+        # Template D: link-text title + location in a sibling <li> (not <span>),
+        # sitting >300 chars after </a> — closes on any tag, bounded by next anchor.
+        self.assertEqual(jobs[3]["title"], "Associate Analyst")
+        self.assertEqual(jobs[3]["location"], "Toronto, Ontario")
         self.assertGreaterEqual(len([c for c in fake.calls if c[0] == "GET"]), 2)
 
 
