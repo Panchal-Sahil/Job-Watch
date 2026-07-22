@@ -21,12 +21,17 @@ def fetch_radancy(board):
     query = parsed.query
     ua = {"User-Agent": BROWSER_UA}
 
-    # Two Radancy templates exist: an older one (data-title attr, location span
-    # inside the <a>) and a newer one (title is the link text, location is a
-    # sibling span after it). This handles both by matching the job <a> tag, then
-    # looking for a `*job-location*` span in the link body OR the text just after.
+    # Three Radancy templates exist: (A) data-title attr + location span inside the
+    # <a>; (B) title is the link text, location is a sibling span after it; (C) a
+    # heading (`*job-title*`) + a `*result-location*` span inside the <a>. Match the
+    # job <a> tag, then pull the title from data-title -> a `*title*` heading in the
+    # body -> the stripped body, and the location from any `*location*` span in the
+    # body OR the text just after (class names vary: job-location / result-location).
     anchor_re = re.compile(r'<a\s+([^>]*\bdata-job-id="[^"]+"[^>]*)>(.*?)</a>', re.S)
-    loc_re = re.compile(r'class="[^"]*job-location[^"]*"[^>]*>(.*?)</span>', re.S)
+    title_re = re.compile(r'class="[^"]*title[^"]*"[^>]*>(.*?)</', re.S)
+    # Close on any tag, not just </span>: the location element is a <span> in some
+    # templates and an <li> in others (Capital One). Inner tags are stripped below.
+    loc_re = re.compile(r'class="[^"]*location[^"]*"[^>]*>(.*?)</', re.S)
 
     def attr(tag, name):
         m = re.search(name + r'="([^"]*)"', tag)
@@ -39,15 +44,26 @@ def fetch_radancy(board):
         r.raise_for_status()
         text = r.text
         new = 0
-        for m in anchor_re.finditer(text):
+        matches = list(anchor_re.finditer(text))
+        for i, m in enumerate(matches):
             tag, body = m.group(1), m.group(2)
             href, jid = attr(tag, "href"), attr(tag, "data-job-id")
             if "/job/" not in href or jid in seen_ids:
                 continue
             seen_ids.add(jid)
             new += 1
-            title = attr(tag, "data-title") or re.sub(r"<[^>]+>", "", body)
-            ml = loc_re.search(body) or loc_re.search(text[m.end():m.end() + 300])
+            tm = title_re.search(body)
+            title = (attr(tag, "data-title")
+                     or (tm.group(1) if tm else "")
+                     or re.sub(r"<[^>]+>", "", body))
+            # Location: inside the <a> body (templates A/C), else in the block
+            # rendered after </a> (templates B/D) — bounded by the next anchor so a
+            # job with no location can't borrow the following job's. For the last
+            # anchor there's no next one to bound against; cap the window so a
+            # location-less last job can't reach a footer "jobs by location" widget.
+            nxt = (matches[i + 1].start() if i + 1 < len(matches)
+                   else min(len(text), m.end() + 2000))
+            ml = loc_re.search(body) or loc_re.search(text[m.end():nxt])
             location = re.sub(r"<[^>]+>|\s+", " ", ml.group(1)).strip() if ml else ""
             jobs.append({
                 "id": f"radancy:{host}:{jid}",
