@@ -1,11 +1,11 @@
-# jobwatch — User Guide
+# Job Watch — User Guide
 
 This is the practical, start-here guide. If you've forgotten how any of this works,
 read the section you need and run the commands as shown. Everything runs in a
 terminal from the project folder:
 
 ```bash
-cd /home/sp/Documents/Projects/jobwatch
+cd /home/sp/Documents/Projects/Job-Watch
 ```
 
 ---
@@ -328,7 +328,7 @@ GUIDE.md            This file.
 It's built to run by hand, but you can have cron run it on a schedule and log the output:
 
 ```cron
-0 9,13,17 * * *  cd /home/sp/Documents/Projects/jobwatch && python3 jobwatch.py >> log.txt 2>&1
+0 9,13,17 * * *  cd /home/sp/Documents/Projects/Job-Watch && python3 jobwatch.py >> log.txt 2>&1
 ```
 
 (Open your crontab with `crontab -e`.) That checks at 9am, 1pm, and 5pm daily and appends

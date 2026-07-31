@@ -1,5 +1,4 @@
-# jobwatch
-
+# Job Watch
 Polls company **ATS career boards** directly and prints jobs that match your
 filters. Remembers what it has already shown you, so each run only surfaces
 what's **new** since last time. Terminal-only, no accounts, no database.
@@ -150,7 +149,7 @@ Leave a list empty (`[]`) to skip that check.
 It's built to run manually. To get pinged automatically, add a cron entry:
 
 ```
-0 9,13,17 * * *  cd /home/sp/Documents/Projects/jobwatch && python3 jobwatch.py >> log.txt 2>&1
+0 9,13,17 * * *  cd /home/sp/Documents/Projects/Job-Watch && python3 jobwatch.py >> log.txt 2>&1
 ```
 
 To add desktop/email/Discord notifications, hook into the `new_jobs` list at
