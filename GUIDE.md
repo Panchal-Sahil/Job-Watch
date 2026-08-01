@@ -263,28 +263,19 @@ is intentionally zero-extra-dependencies.
 
 ### Testing a single board live
 
-To check that an adapter fetches real data correctly without running all 200+ boards:
+`test-ats.py` lets you run one ATS type (or one named board) against real data without
+touching `seen.json` or running all 200+ boards:
 
 ```bash
-python3 -c "
-from adapters.<type> import fetch_<type>
-jobs = fetch_<type>({'name': '<Name>', 'type': '<type>', 'url': '<url>'})
-print(len(jobs), 'jobs')
-for j in jobs[:5]: print(j['title'], '|', j['location'], '|', j['posted'])
-"
+python3 test-ats.py --ats avature                    # all avature boards, filtered
+python3 test-ats.py --ats avature --board "Siemens"  # one board, filtered
+python3 test-ats.py --ats avature --raw              # skip filtering, show everything
+python3 test-ats.py --ats avature --n 10             # show 10 sample jobs (default 5)
 ```
 
-Replace `<type>`, `<Name>`, and `<url>` with values from the board's `config.json` entry.
-The `type` field doubles as the module name and the import name. Example for a Greenhouse board:
-
-```bash
-python3 -c "
-from adapters.greenhouse import fetch_greenhouse
-jobs = fetch_greenhouse({'name': 'Shopify', 'type': 'greenhouse', 'url': 'https://job-boards.greenhouse.io/shopify'})
-print(len(jobs), 'jobs')
-for j in jobs[:5]: print(j['title'], '|', j['location'], '|', j['posted'])
-"
-```
+Works for any adapter type — `--ats greenhouse`, `--ats workday`, etc. The filtered view
+runs through your `config.json` filters and injects `query_terms` exactly as a real
+jobwatch run does.
 
 ---
 
