@@ -10,7 +10,7 @@ open-for-extension: a new platform is a new row, not a new branch.
 SUPPORTED_TYPES = {
     "workday", "greenhouse", "lever", "ashby", "phenom", "successfactors",
     "oracle", "radancy", "smartrecruiters", "bamboohr", "rippling", "ripplematch",
-    "ukg", "dayforce", "icims", "eightfold",
+    "ukg", "dayforce", "icims", "eightfold", "jazzhr",
 }
 
 # (type, host-regex). Matched against the final (post-redirect) URL's host and
@@ -28,6 +28,7 @@ HOST_RULES = [
     ("ukg", r"\.ultipro\.(com|ca)$|recruiting\.ultipro"),
     ("dayforce", r"(^|\.)jobs\.dayforcehcm\.com$"),
     ("oracle", r"\.oraclecloud\.com$"),
+    ("jazzhr", r"\.applytojob\.com$"),
     ("radancy", r"\.talentbrew\.com$|\.tbcdn\.talentbrew"),
     ("successfactors", r"\.sapsf\.com$|\.successfactors\.com$"),
 ]
@@ -58,6 +59,7 @@ HTML_SIGNATURES = [
     ("smartrecruiters", r"smartrecruiters\.com", None),
     ("bamboohr", r"\.bamboohr\.com", None),
     ("rippling", r"ats\.rippling\.com", None),
+    ("jazzhr", r"applytojob\.com|resumator_even_row|resumator_odd_row", None),
     ("ukg", r"\.ultipro\.(?:com|ca)|recruiting\.ultipro", None),
     ("successfactors", r"successfactors\.com|rmkcdn|/sfcareer/", None),
     ("workday", r"\.myworkdayjobs\.com|\.myworkdaysite\.com", None),
@@ -72,7 +74,6 @@ OTHER_ATS = [
     ("Yello", r"yello\.co"),
     ("Beamery", r"beamery\.com|beamery"),
     ("Avature", r"avature\.net|avature"),
-    ("JazzHR", r"applytojob\.com|jazzhr"),
     ("Recruitee", r"\.recruitee\.com"),
     ("Breezy HR", r"breezy\.hr"),
     ("Teamtailor", r"teamtailor\.com"),
