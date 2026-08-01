@@ -22,9 +22,9 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters import (ashby, bamboohr, dayforce, eightfold, greenhouse, icims,
-                      jazzhr, lever, oracle, phenom, radancy, ripplematch, rippling,
-                      smartrecruiters, successfactors, ukg, workday)
+from adapters import (ashby, avature, bamboohr, dayforce, eightfold, greenhouse,
+                      icims, jazzhr, lever, oracle, phenom, radancy, ripplematch,
+                      rippling, smartrecruiters, successfactors, ukg, workday)
 from tests.fakehttp import FakeRequests, jresp
 
 REQUIRED_KEYS = {"id", "title", "location", "posted", "url", "company"}
@@ -668,6 +668,109 @@ class TestJazzHR(AdapterTestCase):
         self.assertEqual(jobs[1]["id"], "jazzhr:acme:XcUOPF2PGf")
         self.assertEqual(jobs[1]["location"], "Remote")
         self.assertEqual(jobs[1]["posted"], "2026-06-01")
+
+
+class TestAvature(AdapterTestCase):
+    """HTML-scraped Avature portal — article template (city/state/country and
+    plain-text location variants) and table template, with offset pagination."""
+
+    # Article template: page 1 uses nested city/state/country spans;
+    # page 2 uses plain-text location and a different ID span name.
+    ART_P1 = (
+        '<article class="article article--result 1" id="article--1">'
+        '<h3 class="article__header__text__title title--h3">'
+        '<a class="link" href="https://jobs.acme.com/en_US/careers/JobDetail/12345">'
+        'Software Intern &amp; Co-op'
+        '</a></h3>'
+        '<span class="list-item-location">'
+        '<span class="list-item-jobCity">Toronto</span>'
+        '<span class="separator">, </span>'
+        '<span class="list-item-jobState">Ontario</span>'
+        '<span class="separator">, </span>'
+        '<span class="list-item-jobCountry">Canada</span>'
+        '</span>'
+        '<span class="list-item-jobId">Job ID: 12345</span>'
+        '</article>'
+        '<li class="list-controls__pagination__item paginationNextLink">'
+        '<a href="https://jobs.acme.com/en_US/careers/SearchJobs/'
+        '?folderRecordsPerPage=6&amp;folderOffset=6">Next &gt;&gt;</a>'
+        '</li>'
+    )
+
+    ART_P2 = (
+        '<article class="article article--result article--non-toggle" id="article--1">'
+        '<h3 class="article__header__text__title title--04">'
+        '<a class="link link_result" href="https://jobs.acme.com/en_US/careers/JobDetail/67890">'
+        'Data Intern'
+        '</a></h3>'
+        '<span class="list-item-location">Remote, Canada</span>'
+        '<span class="list-item-id">Role ID 67890</span>'
+        '</article>'
+    )
+
+    # Table template: two rows with data-map="job-detail-link".
+    TABLE_PAGE = (
+        '<tr>'
+        '<th scope="row">'
+        '<a class="link fw--500" data-map="job-detail-link" '
+        'href="https://careers.bank.com/en_CA/careers/JobDetail/Finance-Intern/11111">'
+        'Finance Intern'
+        '</a>'
+        '</th>'
+        '<td>\n    Montreal, Quebec\n</td>'
+        '</tr>'
+        '<tr>'
+        '<th scope="row">'
+        '<a class="link fw--500" data-map="job-detail-link" '
+        'href="https://careers.bank.com/en_CA/careers/JobDetail/Data-Analyst/22222">'
+        'Data Analyst Intern'
+        '</a>'
+        '</th>'
+        '<td>Toronto, Ontario</td>'
+        '</tr>'
+    )
+
+    def test_article_template_paginates(self):
+        def route(url, **kw):
+            return jresp(text=self.ART_P1 if "folderOffset" not in url else self.ART_P2)
+
+        jobs, fake = self.run_adapter(
+            avature, avature.fetch_avature,
+            {"name": "Acme", "url": "https://jobs.acme.com/en_US/careers/SearchJobs/"},
+            [("GET", "jobs.acme.com", route)])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 2)
+
+        j0 = jobs[0]
+        self.assertEqual(j0["id"], "avature:jobs.acme.com:12345")
+        self.assertEqual(j0["title"], "Software Intern & Co-op")
+        self.assertEqual(j0["location"], "Toronto, Ontario, Canada")
+        self.assertEqual(j0["posted"], "")
+        self.assertEqual(j0["url"], "https://jobs.acme.com/en_US/careers/JobDetail/12345")
+        self.assertEqual(j0["company"], "Acme")
+
+        j1 = jobs[1]
+        self.assertEqual(j1["id"], "avature:jobs.acme.com:67890")
+        self.assertEqual(j1["title"], "Data Intern")
+        self.assertEqual(j1["location"], "Remote, Canada")
+        self.assertEqual(j1["url"], "https://jobs.acme.com/en_US/careers/JobDetail/67890")
+        self.assertGreaterEqual(
+            len([c for c in fake.calls if c[0] == "GET"]), 2,
+            "should have fetched at least 2 pages")
+
+    def test_table_template(self):
+        jobs, _ = self.run_adapter(
+            avature, avature.fetch_avature,
+            {"name": "Bank", "url": "https://careers.bank.com/en_CA/careers/searchjobs/"},
+            [("GET", "careers.bank.com", jresp(text=self.TABLE_PAGE))])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 2)
+        self.assertEqual(jobs[0]["id"], "avature:careers.bank.com:11111")
+        self.assertEqual(jobs[0]["title"], "Finance Intern")
+        self.assertEqual(jobs[0]["location"], "Montreal, Quebec")
+        self.assertEqual(jobs[0]["company"], "Bank")
+        self.assertEqual(jobs[1]["id"], "avature:careers.bank.com:22222")
+        self.assertEqual(jobs[1]["location"], "Toronto, Ontario")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from adapters.ashby import fetch_ashby
+from adapters.avature import fetch_avature
 from adapters.bamboohr import fetch_bamboohr
 from adapters.dayforce import fetch_dayforce
 from adapters.eightfold import fetch_eightfold
@@ -125,6 +126,7 @@ ADAPTERS = {
     "icims": fetch_icims,
     "jazzhr": fetch_jazzhr,
     "eightfold": fetch_eightfold,
+    "avature": fetch_avature,
 }
 
 
