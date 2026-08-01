@@ -3,7 +3,7 @@ Polls company **ATS career boards** directly and prints jobs that match your
 filters. Remembers what it has already shown you, so each run only surfaces
 what's **new** since last time. Terminal-only, no accounts, no database.
 
-Supports 15 ATS platforms. Other types plug in as small adapters.
+Supports 17 ATS platforms. Other types plug in as small adapters.
 
 | ATS | URL looks like | config `type` |
 |-----|----------------|---------------|
@@ -22,6 +22,8 @@ Supports 15 ATS platforms. Other types plug in as small adapters.
 | Dayforce | `jobs.dayforcehcm.com/<locale>/<namespace>/<board>` | `dayforce` |
 | iCIMS | `<sub>.icims.com/jobs/search`, or a careers-home vanity domain | `icims` |
 | Eightfold | `<host>/careers?...&pid=...&sort_by=...` (page has `pcsxConfig`) | `eightfold` |
+| RippleMatch | `app.ripplematch.com/v2/public/company/<slug>` | `ripplematch` |
+| JazzHR | `<tenant>.applytojob.com/apply` | `jazzhr` |
 
 - **Greenhouse/Lever/Ashby**: slug is read from the last path segment; override
   with `"token"`/`"company"`/`"board"`.

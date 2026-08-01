@@ -23,7 +23,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from adapters import (ashby, bamboohr, dayforce, eightfold, greenhouse, icims,
-                      lever, oracle, phenom, radancy, ripplematch, rippling,
+                      jazzhr, lever, oracle, phenom, radancy, ripplematch, rippling,
                       smartrecruiters, successfactors, ukg, workday)
 from tests.fakehttp import FakeRequests, jresp
 
@@ -630,6 +630,44 @@ class TestSuccessFactorsClassic(AdapterTestCase):
         self.assertEqual(jobs[0]["title"], "Software Intern")
         self.assertEqual(jobs[0]["location"], "Toronto, ON")
         self.assertTrue(any("tile-search-results" in c[1] for c in fake.calls))
+
+
+class TestJazzHR(AdapterTestCase):
+    """HTML-scraped JazzHR board at <tenant>.applytojob.com/apply/jobs."""
+
+    PAGE = (
+        '<tr id="row_job_20260710175648_AAABBBCCC" class="resumator_even_row">'
+        '<td><a class="job_title_link" href="/apply/jobs/details/hKQA66W5Ad?&">'
+        'Software Intern &amp; Co-op</a>'
+        '<br /><span class="resumator_department">Engineering</span></td>'
+        '<td>\n\t\t\t\t\tToronto, ON, Canada\t\t\t\t\t</td>'
+        '</tr>'
+        '<tr id="row_job_20260601120000_DDDEEEFFF" class="resumator_odd_row">'
+        '<td><a class="job_title_link" href="/apply/jobs/details/XcUOPF2PGf?&">'
+        'Data Co-op</a>'
+        '<br /><span class="resumator_department">Analytics</span></td>'
+        '<td>\n\t\t\t\t\tRemote\t\t\t\t\t</td>'
+        '</tr>'
+    )
+
+    def test_normalizes_and_parses_date(self):
+        jobs, _ = self.run_adapter(
+            jazzhr, jazzhr.fetch_jazzhr,
+            {"name": "Acme", "url": "https://acme.applytojob.com/apply"},
+            [("GET", "acme.applytojob.com/apply/jobs", jresp(text=self.PAGE))])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 2)
+        j = jobs[0]
+        self.assertEqual(j["id"], "jazzhr:acme:hKQA66W5Ad")
+        self.assertEqual(j["title"], "Software Intern & Co-op")
+        self.assertEqual(j["location"], "Toronto, ON, Canada")
+        self.assertEqual(j["posted"], "2026-07-10")
+        self.assertEqual(j["url"],
+                         "https://acme.applytojob.com/apply/jobs/details/hKQA66W5Ad")
+        self.assertEqual(j["company"], "Acme")
+        self.assertEqual(jobs[1]["id"], "jazzhr:acme:XcUOPF2PGf")
+        self.assertEqual(jobs[1]["location"], "Remote")
+        self.assertEqual(jobs[1]["posted"], "2026-06-01")
 
 
 if __name__ == "__main__":

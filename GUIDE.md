@@ -176,7 +176,7 @@ in the `"boards"` array. Minimal entry:
 ```
 
 The supported `type` values (and what their URLs look like) are listed in **`README.md`** —
-15 systems including `workday`, `greenhouse`, `lever`, `ashby`, `icims`, `oracle`, etc.
+17 systems including `workday`, `greenhouse`, `lever`, `ashby`, `icims`, `oracle`, etc.
 
 Most boards need only `name`, `type`, `url`. A few need an override when the tool can't
 figure something out from the URL alone — common ones:
@@ -260,6 +260,31 @@ is intentionally zero-extra-dependencies.
 
 > `jobwatch.py` itself has no automated tests yet. To "test" a jobwatch change, just run it
 > against your real boards and eyeball the output.
+
+### Testing a single board live
+
+To check that an adapter fetches real data correctly without running all 200+ boards:
+
+```bash
+python3 -c "
+from adapters.<type> import fetch_<type>
+jobs = fetch_<type>({'name': '<Name>', 'type': '<type>', 'url': '<url>'})
+print(len(jobs), 'jobs')
+for j in jobs[:5]: print(j['title'], '|', j['location'], '|', j['posted'])
+"
+```
+
+Replace `<type>`, `<Name>`, and `<url>` with values from the board's `config.json` entry.
+The `type` field doubles as the module name and the import name. Example for a Greenhouse board:
+
+```bash
+python3 -c "
+from adapters.greenhouse import fetch_greenhouse
+jobs = fetch_greenhouse({'name': 'Shopify', 'type': 'greenhouse', 'url': 'https://job-boards.greenhouse.io/shopify'})
+print(len(jobs), 'jobs')
+for j in jobs[:5]: print(j['title'], '|', j['location'], '|', j['posted'])
+"
+```
 
 ---
 

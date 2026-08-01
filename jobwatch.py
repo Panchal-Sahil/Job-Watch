@@ -5,7 +5,7 @@ Run it whenever you like:  python3 jobwatch.py
 It remembers which jobs it has already shown you (seen.json), so each run only
 prints what's NEW since last time.
 
-Supports 15 ATS platforms. Each one is a small adapter in the `adapters/`
+Supports 17 ATS platforms. Each one is a small adapter in the `adapters/`
 package (`adapters/<platform>.py`) that returns the normalized job shape; the
 adapters are wired into the `ADAPTERS` registry below.
 """
@@ -22,6 +22,7 @@ from adapters.dayforce import fetch_dayforce
 from adapters.eightfold import fetch_eightfold
 from adapters.greenhouse import fetch_greenhouse
 from adapters.icims import fetch_icims
+from adapters.jazzhr import fetch_jazzhr
 from adapters.lever import fetch_lever
 from adapters.oracle import fetch_oracle
 from adapters.phenom import fetch_phenom
@@ -122,6 +123,7 @@ ADAPTERS = {
     "ukg": fetch_ukg,
     "dayforce": fetch_dayforce,
     "icims": fetch_icims,
+    "jazzhr": fetch_jazzhr,
     "eightfold": fetch_eightfold,
 }
 
