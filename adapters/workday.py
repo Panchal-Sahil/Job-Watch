@@ -37,6 +37,10 @@ def fetch_workday(board):
     From it we derive the JSON endpoint:
         https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/External_Careers/jobs
     which we POST to, paging via offset.
+
+    The tenant is taken from the hostname unless config pins it or the URL carries a
+    "recruiting/<tenant>" segment; a hostname-derived tenant is retried once with its
+    hyphens turned back into underscores if Workday rejects it (see below).
     """
     url = board["url"]
     parsed = urlparse(url)
@@ -54,6 +58,7 @@ def fetch_workday(board):
     if not tenant and len(segs) >= 2 and segs[0] == "recruiting":
         tenant = segs[1]
         segs = segs[2:]
+    from_host = not tenant
     if not tenant:
         tenant = host.split(".")[0]  # acme
 
@@ -62,7 +67,14 @@ def fetch_workday(board):
         raise ValueError(f"Could not determine Workday site slug from URL: {url}")
 
     endpoint = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
-    company = board.get("name", tenant)
+    name = board.get("name")
+
+    # A tenant may contain an underscore, which a hostname label can't: tenant
+    # "vhr_genband" is served from vhr-genband.wd1.myworkdayjobs.com, and asking for
+    # the hyphenated name gets a 422. The two are indistinguishable in the URL, so
+    # when the tenant came from the hostname, retry once with the underscores back.
+    # (Only that path — a pinned or recruiting/<tenant> tenant is already literal.)
+    retry_underscore = from_host and "-" in tenant
 
     jobs = []
     offset, limit = 0, 20
@@ -70,6 +82,11 @@ def fetch_workday(board):
     while True:
         body = {"appliedFacets": {}, "limit": limit, "offset": offset, "searchText": ""}
         resp = requests.post(endpoint, headers=HEADERS, json=body, timeout=30)
+        if retry_underscore and resp.status_code in (404, 422):
+            retry_underscore = False
+            tenant = tenant.replace("-", "_")
+            endpoint = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
+            continue  # same offset — nothing was consumed
         resp.raise_for_status()
         data = resp.json()
         postings = data.get("jobPostings", [])
@@ -91,7 +108,7 @@ def fetch_workday(board):
                     "location": location,
                     "posted": p.get("postedOn", "").strip(),
                     "url": f"https://{host}{ext}" if ext else url,
-                    "company": company,
+                    "company": name or tenant,
                 }
             )
         if total is None:
