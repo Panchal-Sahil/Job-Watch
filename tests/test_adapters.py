@@ -349,6 +349,41 @@ class TestWorkday(AdapterTestCase):
             [("POST", "wd3.myworkdaysite.com/wday/cxs/gflenv/Careers/jobs", jresp(payload=payload))])
         self.assertEqual(jobs[0]["id"], "gflenv:R0")  # tenant from recruiting/<tenant>
 
+    def test_underscore_tenant_retried_after_422(self):
+        """Tenant "vhr_genband" is served from vhr-genband.wd1… — the hyphenated name
+        the hostname yields is rejected, so the adapter retries with underscores."""
+        payload = {"total": 1, "jobPostings": [self._job(0)]}
+        jobs, fake = self.run_adapter(
+            workday, workday.fetch_workday,
+            {"url": "https://vhr-genband.wd1.myworkdayjobs.com/en-US/ribboncareers"},
+            [("POST", "/wday/cxs/vhr_genband/ribboncareers/jobs", jresp(payload=payload)),
+             ("POST", "/wday/cxs/vhr-genband/ribboncareers/jobs", jresp(status=422))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["id"], "vhr_genband:R0")  # id keyed on real tenant
+        self.assertEqual([c[1].split("/wday")[1] for c in fake.calls],
+                         ["/cxs/vhr-genband/ribboncareers/jobs",
+                          "/cxs/vhr_genband/ribboncareers/jobs"])
+
+    def test_underscore_retry_is_one_shot(self):
+        """A tenant that 422s under both spellings must surface the error, not loop."""
+        with self.assertRaises(RuntimeError):  # FakeResponse.raise_for_status
+            self.run_adapter(
+                workday, workday.fetch_workday,
+                {"url": "https://a-b.wd5.myworkdayjobs.com/en-US/Careers"},
+                [("POST", "/wday/cxs/", jresp(status=422))])
+
+    def test_pinned_tenant_is_not_rewritten(self):
+        """An explicit tenant is literal — a hyphen in it is the real name."""
+        payload = {"total": 1, "jobPostings": [self._job(0)]}
+        # The underscore spelling would succeed — so a retry would mask the error.
+        with self.assertRaises(RuntimeError):
+            self.run_adapter(
+                workday, workday.fetch_workday,
+                {"url": "https://acme.wd5.myworkdayjobs.com/en-US/Careers",
+                 "tenant": "acme-emea"},
+                [("POST", "/wday/cxs/acme-emea/Careers/jobs", jresp(status=422)),
+                 ("POST", "/wday/cxs/acme_emea/Careers/jobs", jresp(payload=payload))])
+
     def test_missing_site_raises(self):
         with self.assertRaises(ValueError):
             self.run_adapter(
