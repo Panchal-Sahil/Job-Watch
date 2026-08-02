@@ -15,3 +15,4 @@ probe-list.md
 # Local-only files (kept on disk, not tracked)
 CLAUDE.md
 .python-version
+.vscode
