@@ -164,3 +164,8 @@ Each ATS is a JSON API returning a list of jobs. Add `adapters/<name>.py` with a
 posted, url, company`), then import it into `jobwatch.py` and register it in the
 `ADAPTERS` dict. ~30 lines each. Shared helpers (`HEADERS`, `BROWSER_UA`,
 `_slug_from_url`) live in `adapters/common.py`.
+
+Before optimizing an adapter's paging, read [docs/performance.md](docs/performance.md) —
+it records where a run's time actually goes, and which obvious-looking speedups are
+measured dead ends (raising Workday's page size past 20 returns HTTP 400 and would take
+out all 99 Workday boards).
