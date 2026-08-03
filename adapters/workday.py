@@ -1,12 +1,11 @@
 """Workday ATS adapter."""
 
 import re
-import time
 from urllib.parse import urlparse
 
 import requests
 
-from adapters.common import HEADERS
+from adapters.common import HEADERS, polite_sleep
 
 # Workday's list endpoint collapses a posting tied to several offices into a count
 # placeholder ("2 Locations") instead of city names — which defeats location filters.
@@ -100,7 +99,7 @@ def fetch_workday(board):
                 resolved = _resolve_locations(host, tenant, site, ext)
                 if resolved:
                     location = resolved
-                time.sleep(0.5)  # be polite about the extra detail fetch
+                polite_sleep(0.5)  # be polite about the extra detail fetch
             jobs.append(
                 {
                     "id": f"{tenant}:{bullets[0]}",
@@ -116,5 +115,5 @@ def fetch_workday(board):
         offset += limit
         if not postings or offset >= total:
             break
-        time.sleep(0.5)  # be polite
+        polite_sleep(0.5)  # be polite
     return jobs

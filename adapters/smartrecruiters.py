@@ -1,12 +1,11 @@
 """SmartRecruiters ATS adapter."""
 
 import re
-import time
 from urllib.parse import urlparse
 
 import requests
 
-from adapters.common import BROWSER_UA, _slug_from_url
+from adapters.common import BROWSER_UA, _slug_from_url, polite_sleep
 
 # A vanity careers page (www.assent.com/company/careers/, dexterra.com/en-ca/...)
 # has no company id in its path — the real one is embedded in the page, either in
@@ -103,5 +102,5 @@ def fetch_smartrecruiters(board):
         offset += limit
         if not postings or offset >= total:
             break
-        time.sleep(0.3)
+        polite_sleep(0.3)
     return jobs

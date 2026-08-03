@@ -16,6 +16,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from adapters import common
 from adapters.ashby import fetch_ashby
 from adapters.avature import fetch_avature
 from adapters.bamboohr import fetch_bamboohr
@@ -201,6 +202,8 @@ def main():
     filters = config.get("filters", {})
     boards = config.get("boards", [])
     workers = config.get("max_workers", MAX_WORKERS)
+    # Scales every adapter's inter-page pause; see adapters/common.polite_sleep.
+    common.DELAY_SCALE = config.get("request_delay_scale", common.DELAY_SCALE)
     seen = set(load_json(SEEN_PATH, []))
 
     # Fetch every board concurrently; total time ~= the slowest single board.

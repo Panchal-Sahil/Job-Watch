@@ -236,6 +236,19 @@ This narrows those boards to early-career roles *before* your `filters` run. If 
 career focus, update this too (otherwise those boards only ever return interns/grads). A
 single board can override it with its own `"query": [...]`.
 
+### `request_delay_scale` (top of the file, optional)
+Adapters that page through a board pause briefly between pages to stay polite. This one
+number scales all of those pauses:
+
+```json
+"request_delay_scale": 0.2
+```
+
+`0.2` is the default (a fifth of the original pauses — measured as safe across every board
+in this config). Set it to `1.0` to restore the original, more cautious timing, or `0` to
+remove the pauses entirely. If a board ever starts failing with **HTTP 429** ("too many
+requests"), raise this before changing any code.
+
 ---
 
 ## 7. Testing (does the code still work?)

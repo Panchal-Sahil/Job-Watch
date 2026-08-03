@@ -1,11 +1,10 @@
 """UKG Pro Recruiting (UltiPro) ATS adapter."""
 
-import time
 from urllib.parse import urlparse
 
 import requests
 
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, polite_sleep
 
 
 def fetch_ukg(board):
@@ -45,5 +44,5 @@ def fetch_ukg(board):
         skip += 100
         if not opps or skip >= total:
             break
-        time.sleep(0.3)
+        polite_sleep(0.3)
     return jobs

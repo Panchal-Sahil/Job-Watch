@@ -1,12 +1,11 @@
 """Oracle Recruiting Cloud (Candidate Experience) ATS adapter."""
 
 import re
-import time
 from urllib.parse import urlparse
 
 import requests
 
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, polite_sleep
 
 # Vanity domains (careers.oracle.com, jobs.akamai.com, jobs.nokia.com, ...) proxy
 # the CE *UI* but not the /hcmRestApi endpoint — hitting the API on the vanity host
@@ -98,5 +97,5 @@ def fetch_oracle(board):
         offset += limit
         if not reqs or offset >= total:
             break
-        time.sleep(0.3)
+        polite_sleep(0.3)
     return jobs

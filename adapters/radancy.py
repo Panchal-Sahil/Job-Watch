@@ -2,12 +2,11 @@
 
 import html
 import re
-import time
 from urllib.parse import urlparse
 
 import requests
 
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, polite_sleep
 
 
 def fetch_radancy(board):
@@ -76,5 +75,5 @@ def fetch_radancy(board):
         if new == 0 or page > 40:  # no fresh items (last page) / safety cap
             break
         page += 1
-        time.sleep(0.3)
+        polite_sleep(0.3)
     return jobs
