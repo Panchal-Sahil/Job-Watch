@@ -11,12 +11,11 @@ scraping tiles, so a board entry needs only its search URL regardless of templat
 import html
 import json
 import re
-import time
 from urllib.parse import quote, unquote, urlparse
 
 import requests
 
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, polite_sleep
 
 # Canadian province/territory codes, used to recover clean locations from SF slugs.
 CA_PROV = {"ON", "BC", "QC", "AB", "MB", "SK", "NS", "NB", "NL", "PE", "YT", "NT", "NU"}
@@ -119,7 +118,7 @@ def _fetch_modern(url, netloc, company):
         if new == 0:
             break
         page += 1
-        time.sleep(0.3)
+        polite_sleep(0.3)
     return jobs
 
 
@@ -184,5 +183,5 @@ def _fetch_classic(parsed, company):
         startrow += len(tiles)
         if len(tiles) < 10 or startrow > 2000:  # last page / safety cap
             break
-        time.sleep(0.3)
+        polite_sleep(0.3)
     return jobs

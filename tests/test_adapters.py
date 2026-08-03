@@ -406,6 +406,36 @@ class TestWorkday(AdapterTestCase):
              ("GET", "/wday/cxs/acme/External_Careers/job/0", jresp(payload=detail_payload))])
         self.assertEqual(jobs[0]["location"], "Toronto, Montreal, Vancouver")
 
+    def _multi_loc_rules(self):
+        list_payload = {"total": 1, "jobPostings": [self._job(0, loc="3 Locations")]}
+        detail_payload = {"jobPostingInfo": {"location": "Toronto",
+                                             "additionalLocations": ["Montreal", "Vancouver"]}}
+        return [("POST", "/wday/cxs/acme/External_Careers/jobs", jresp(payload=list_payload)),
+                ("GET", "/wday/cxs/acme/External_Careers/job/0", jresp(payload=detail_payload))]
+
+    def test_title_prefilter_skips_detail_fetch(self):
+        """Resolving "N Locations" costs a request per posting. A title that can't
+        pass jobwatch's filter is dropped whatever its location turns out to be, so
+        the adapter must not spend that request — it keeps the placeholder instead."""
+        jobs, fake = self.run_adapter(
+            workday, workday.fetch_workday,
+            {"url": "https://acme.wd5.myworkdayjobs.com/en-US/External_Careers",
+             "resolve_multi_location": True, "title_ok": lambda t: False},
+            self._multi_loc_rules())
+        self.assertEqual(jobs[0]["location"], "3 Locations")  # left unresolved
+        self.assertEqual([c for c in fake.calls if c[0] == "GET"], [],
+                         "no detail fetch may happen for a title that can't match")
+
+    def test_title_prefilter_true_still_resolves(self):
+        """The mirror of the above — guards against the prefilter wired backwards."""
+        jobs, fake = self.run_adapter(
+            workday, workday.fetch_workday,
+            {"url": "https://acme.wd5.myworkdayjobs.com/en-US/External_Careers",
+             "resolve_multi_location": True, "title_ok": lambda t: True},
+            self._multi_loc_rules())
+        self.assertEqual(jobs[0]["location"], "Toronto, Montreal, Vancouver")
+        self.assertEqual(len([c for c in fake.calls if c[0] == "GET"]), 1)
+
     def test_myworkdaysite_tenant_derivation(self):
         payload = {"total": 1, "jobPostings": [self._job(0)]}
         jobs, _ = self.run_adapter(

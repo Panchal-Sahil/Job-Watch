@@ -2,12 +2,11 @@
 
 import html
 import json
-import time
 from urllib.parse import urlparse
 
 import requests
 
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, polite_sleep
 
 
 def _extract_js_object(text, marker):
@@ -83,5 +82,5 @@ def fetch_phenom(board):
             frm += 100
             if not postings or frm >= rs.get("totalHits", 0):
                 break
-            time.sleep(0.3)
+            polite_sleep(0.3)
     return list(by_id.values())

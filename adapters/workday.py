@@ -1,12 +1,11 @@
 """Workday ATS adapter."""
 
 import re
-import time
 from urllib.parse import urlparse
 
 import requests
 
-from adapters.common import HEADERS
+from adapters.common import HEADERS, polite_sleep
 
 # Workday's list endpoint collapses a posting tied to several offices into a count
 # placeholder ("2 Locations") instead of city names — which defeats location filters.
@@ -76,6 +75,13 @@ def fetch_workday(board):
     # (Only that path — a pinned or recruiting/<tenant> tenant is already literal.)
     retry_underscore = from_host and "-" in tenant
 
+    # Resolving a "N Locations" placeholder costs a request per posting, and on a big
+    # board most postings are filtered out on their title alone — in which case the
+    # real location can't change the outcome. jobwatch supplies the title half of its
+    # filter here so we only pay for postings that could actually be surfaced.
+    # Absent (probe, tests), everything is a candidate — same behavior as before.
+    title_ok = board.get("title_ok") or (lambda _t: True)
+
     jobs = []
     offset, limit = 0, 20
     total = None  # Workday reports total only on the first page; capture it once.
@@ -94,17 +100,20 @@ def fetch_workday(board):
             ext = p.get("externalPath", "")
             bullets = p.get("bulletFields") or [ext]
             location = p.get("locationsText", "").strip()
+            title = p.get("title", "").strip()
             # Resolve "N Locations" placeholders to real city names (one extra
-            # request per affected posting) when enabled in config.
-            if ext and board.get("resolve_multi_location") and _MULTI_LOC_RE.match(location):
+            # request per affected posting) when enabled in config — but only for
+            # titles that could survive the filter (see title_ok above).
+            if (ext and board.get("resolve_multi_location")
+                    and _MULTI_LOC_RE.match(location) and title_ok(title)):
                 resolved = _resolve_locations(host, tenant, site, ext)
                 if resolved:
                     location = resolved
-                time.sleep(0.5)  # be polite about the extra detail fetch
+                polite_sleep(0.5)  # be polite about the extra detail fetch
             jobs.append(
                 {
                     "id": f"{tenant}:{bullets[0]}",
-                    "title": p.get("title", "").strip(),
+                    "title": title,
                     "location": location,
                     "posted": p.get("postedOn", "").strip(),
                     "url": f"https://{host}{ext}" if ext else url,
@@ -116,5 +125,5 @@ def fetch_workday(board):
         offset += limit
         if not postings or offset >= total:
             break
-        time.sleep(0.5)  # be polite
+        polite_sleep(0.5)  # be polite
     return jobs
