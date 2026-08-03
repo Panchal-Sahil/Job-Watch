@@ -39,6 +39,8 @@ from adapters.workday import fetch_workday
 # How many boards to fetch at once. The threads are almost entirely idle waiting on
 # network, so this can run well above the core count; past ~32 the run is bound by the
 # slowest single board rather than by throughput. Override with `max_workers` in config.
+# (The Workday adapter fans its own paging out over a second, smaller shared pool —
+# see adapters/workday._PAGE_POOL — so peak threads are this plus that pool.)
 MAX_WORKERS = 32
 
 HERE = Path(__file__).resolve().parent

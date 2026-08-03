@@ -15,9 +15,10 @@ not estimates, unless explicitly marked as modelled.
 | Original (8 workers, resolving every placeholder) | ~1,900 s (modelled) |
 | After the multi-location prefilter + delay scaling | **445 s** (measured) |
 | After raising the worker count to 32 | **186 s** (measured) |
+| After the parallel Workday page fan-out | **147 s** (measured) |
 
-The two measured points are full runs of all 303 boards. The original figure is modelled
-from per-board probes rather than a stopwatch, so treat it as approximate — the two later
+The measured points are full runs of all 303 boards. The original figure is modelled
+from per-board probes rather than a stopwatch, so treat it as approximate — the later
 numbers are not.
 
 ### What was done
@@ -44,21 +45,50 @@ numbers are not.
 3. **`MAX_WORKERS` 8 → 32** (`jobwatch.py`). 303 boards at 8 workers is ~38 sequential
    waves; 32 gives ~10. The threads are almost entirely idle on network.
 
-### Where the remaining 186 s goes
+4. **Parallel page fan-out in `fetch_workday`** (`adapters/workday.py`). Page 0 stays
+   sequential — it settles the underscore-tenant retry, which rewrites the endpoint, and
+   carries `total`. Every remaining offset is then known, so `range(20, total, 20)` goes
+   out in parallel instead of one round-trip after another. Per board: Medtronic 63.1 s →
+   10.2 s, Magna 64.6 s → 10.8 s, both returning **identical job-id sets**.
 
-The last boards to finish in the 186 s run are the critical path:
+   Two things the plan for this did not anticipate, both found by running it:
+
+   **Workday throttles per pod, so the fan-out is per pod.** A single shared 32-thread
+   pool drew 429s from four separate wd5 tenants in one run (General Motors, RTX, Aptiv,
+   Thomson Reuters). That is not chance: wd5 is 19 of 99 Workday boards but the heaviest
+   pod by request volume — 770 requests a run, with RTX (217 pages), GE Vernova (104) and
+   NVIDIA (100) alone accounting for 421 — and a 32-wide burst at one pod is nothing
+   sequential paging ever produced. Pages now fan out over **one bounded pool per pod**
+   (`_pool_for`, keyed on the `wd5.myworkdayjobs.com` half of the hostname), 8 deep. Not
+   per board, which lets several tenants burst at one pod at once; not one global pool
+   with a per-pod semaphore, which lets a busy pod's backlog park every thread and starve
+   the other pods. Eight is below the ~19 concurrent requests a pod already absorbed under
+   sequential paging without complaint.
+
+   **A 429 used to cost the whole board.** `_post_page` retries up to 4 times, honouring
+   `Retry-After` when it parses as seconds and backing off 2/4/8 s otherwise, on page 0 as
+   well as fan-out pages. This is worth having independently of pacing: during this work
+   the *old* sequential code took a 429 on GE Vernova and lost all 2,072 jobs, where the
+   new code retried through it. The backoff is deliberately not scaled by `DELAY_SCALE` —
+   it is the server saying wait, not our own politeness margin.
+
+### Where the remaining 147 s goes
+
+The last boards to finish in the 147 s run are the critical path:
 
 ```
-successfactors  DynaTrace      2004 jobs      workday   RTX            4330 jobs
-successfactors  CapGemini      1752           workday   AtkinsRealis   2000
-oracle          Oracle         2303           avature   LuluLemon      1112
-workday         ABB            2000           workday   Walmart        2000
-workday         Hitachi        2000           workday   Airbus Canada  2000
-oracle          WSP Canada     3804           workday   Accenture      2000   <- last
+workday         Airbus Canada  2000 jobs      workday   RTX            4328 jobs
+oracle          Oracle         2303           phenom    Aptiv           717
+successfactors  DynaTrace      2004           phenom    Thomson Reuters 387
+successfactors  CapGemini      1752           avature   LuluLemon      1112   <- last
+oracle          WSP Canada     3803
 ```
 
-**7 of the 12 slowest are Workday**, each one a long sequential paging loop inside a single
-adapter call. More workers cannot help them — that is what stage 4 addresses.
+Workday is **no longer the critical path** — the tail is now oracle, successfactors and a
+single avature board. The remaining Workday entries finish alongside them rather than
+after them. Nothing in stage 5 changes this; the next real win would be applying the same
+offset fan-out to oracle and successfactors, neither of which has been checked for whether
+it reports a usable total up front.
 
 Serial cost by platform, measured at 40 workers across the 204 non-Workday boards
 (99 s wall, 1,103 s serial): successfactors 412 s/31 boards, oracle 185 s/15,
@@ -68,39 +98,23 @@ Slowest single non-Workday board: LuluLemon (avature) at 89 s.
 
 ---
 
-## Stage 4 — Parallel page fan-out in `fetch_workday`
+## Notes on the shipped fan-out
 
-The only remaining change that restructures a loop, and the one aimed at the current
-critical path.
+Two design points that are easy to undo by accident:
 
-Workday's page size is capped at 20 by the server (see [Dead ends](#dead-ends--measured-do-not-retry)),
-so RTX's 4,330 jobs means **217 requests issued one after another** inside one adapter call.
-Accenture, Walmart, Airbus, ABB, Hitachi and AtkinsRealis are 100 sequential pages each.
-
-Workday reports `total` on page 0 and pages by numeric offset, so every remaining request is
-computable up front:
-
-- Keep page 0 sequential — it carries the underscore-tenant retry and captures `total`.
-  Both must settle before fanning out.
-- Map `range(20, total, 20)` over a **module-level bounded pool** in `adapters/workday.py`
-  shared across all Workday boards, so peak threads stay ~32 outer + N inner rather than
-  multiplying. Inner tasks never submit to the inner pool, so there is no deadlock risk.
-- Keep the per-page `if not postings` guard so a short page contributes nothing.
-
-**Measured:** 12 consecutive Medtronic pages, **15.2 s sequential → 2.1 s at 8 threads**,
-all HTTP 200.
-
-Consequences to handle:
-
-- **Job order within a board becomes nondeterministic.** Nothing depends on it — output is
-  sorted by `(company, title)` and `seen.json` is a sorted set.
-- **It trusts `total` rather than breaking on the first empty page.** Today the loop stops at
-  the first empty page, which can silently truncate; fanning out over all offsets can only
-  return *more* jobs. Note that many boards report exactly `total: 2000` (AtkinsRealis, ABB,
-  Hitachi, Walmart, Airbus, Accenture) — that is a server-side cap, not a bug.
-- **Error semantics shift.** A failure on page 7 surfaces after pages 8-20 have already been
-  fetched. Wrap the fan-out so the first exception propagates, matching today's
-  fail-the-board behaviour rather than silently returning a partial list.
+- **Job order stays deterministic.** The fan-out uses `Executor.map`, which yields results
+  in submission order, so pages land in offset order and the returned list is identical to
+  the sequential version's. Nothing downstream depends on it — output is sorted by
+  `(company, title)` and `seen.json` is a sorted set — but the equivalence check above
+  compares ordered output, and switching to `as_completed` would break that, not the run.
+- **It trusts `total` rather than breaking on the first empty page.** The old loop stopped
+  at the first empty page, which can silently truncate; fanning out over all offsets can
+  only return *more* jobs. Many boards report exactly `total: 2000` (AtkinsRealis, ABB,
+  Hitachi, Walmart, Airbus, Accenture) — that is a server-side cap, not a bug. An empty
+  page 0 still short-circuits: no `total`, no fan-out.
+- **A failing page still fails the whole board.** `map` re-raises the first exception when
+  results are consumed, matching the old fail-the-board behaviour rather than silently
+  returning a partial list — just later, after the other pages have already been fetched.
 
 ---
 
@@ -199,17 +213,33 @@ Fix the warm-up (5d) instead.
 - **Dayforce** requires 2 setup requests (cookie prime + CSRF) before any job data, and its
   paging loop has no safety cap — termination relies entirely on `maxCount`.
 
-### Rate limiting: none observed
+### Rate limiting: Workday throttles per pod, everything else has stayed quiet
 
-Worth re-checking if a board starts failing, but as of the stage 1-3 work:
+This section previously read "none observed", on the strength of the probes below:
 
 - 12 consecutive Workday pages with zero delay: all HTTP 200, no `Retry-After`.
 - All 99 Workday boards hit simultaneously at 40 threads: 98/99 fine (the one failure was an
   unrelated 422).
 - 204 non-Workday boards at 40 workers: zero errors.
 
+Every one of those keeps at most **one request per board** in flight. That is the load
+shape sequential paging produces, and it is not the load shape a page fan-out produces —
+the first version of stage 4 pushed ~32 concurrent requests at a single pod and drew 429s
+from four wd5 tenants at once. Read those probes as "board-level concurrency is fine",
+not "Workday has no limit".
+
+What is known now:
+
+- The limit is **per pod, not per tenant** — four different wd5 tenants throttled together,
+  while wd3 (44 boards, comparable total request volume, spread thinly) never has.
+- 8 concurrent requests per pod is fine: a full run at that pacing had zero 429s.
+- Throttled state **persists past the burst that caused it**, and applies to any client on
+  the IP. Plain sequential fetches of wd5 boards kept taking 429s for a while afterwards.
+- Nothing outside Workday has produced a 429 at any pacing tried.
+
 If a vendor does start throttling, raise `request_delay_scale` in `config.json` before
-changing any code.
+changing any code. For Workday specifically, `_PAGE_WORKERS` in `adapters/workday.py` is
+the pod-level knob, and lowering it is the targeted fix.
 
 ---
 

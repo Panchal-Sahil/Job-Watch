@@ -10,11 +10,12 @@ import json as _json
 
 
 class FakeResponse:
-    def __init__(self, url="", status=200, text="", payload=None):
+    def __init__(self, url="", status=200, text="", payload=None, headers=None):
         self.url = url
         self.status_code = status
         self.text = text
         self._payload = payload
+        self.headers = headers or {}  # e.g. Retry-After on a 429
 
     @property
     def ok(self):
@@ -125,7 +126,7 @@ class _FakeReqSession:
         return self._parent._route("POST", url, **kw)
 
 
-def jresp(payload=None, text="", status=200):
+def jresp(payload=None, text="", status=200, headers=None):
     """A static JSON/text response usable directly as a route target (no lambda —
     FakeRequests returns non-callable targets as-is, so kwargs don't matter)."""
-    return FakeResponse(status=status, text=text, payload=payload)
+    return FakeResponse(status=status, text=text, payload=payload, headers=headers)

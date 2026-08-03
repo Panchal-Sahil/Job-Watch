@@ -394,6 +394,104 @@ class TestWorkday(AdapterTestCase):
         self.assertEqual(jobs[0]["url"], "https://acme.wd5.myworkdayjobs.com/job/0")
         self.assertEqual(len([c for c in fake.calls if c[0] == "POST"]), 2)
 
+    def test_fans_out_remaining_pages_in_offset_order(self):
+        """Past page 0 the offsets are all computable from `total`, so they are
+        issued in parallel — but the returned list must still read in offset order,
+        and every page must be requested exactly once."""
+        def route(url, **kw):
+            offset = kw["json"]["offset"]
+            return jresp(payload={"total": 100,
+                                  "jobPostings": [self._job(i) for i
+                                                  in range(offset, offset + 20)]})
+
+        jobs, fake = self.run_adapter(
+            workday, workday.fetch_workday,
+            {"url": "https://acme.wd5.myworkdayjobs.com/en-US/External_Careers"},
+            [("POST", "/wday/cxs/acme/External_Careers/jobs", route)])
+        self.assert_contract(jobs)
+        self.assertEqual([j["id"] for j in jobs], [f"acme:R{i}" for i in range(100)])
+        self.assertEqual(sorted(c[2]["json"]["offset"] for c in fake.calls),
+                         [0, 20, 40, 60, 80])
+
+    def test_retries_429_instead_of_losing_the_board(self):
+        """Workday throttles by pod, and a 429 used to cost the whole board. It is a
+        "wait", not a failure — back off and retry."""
+        seen = []
+
+        def route(url, **kw):
+            seen.append(kw["json"]["offset"])
+            if len(seen) == 1:
+                return jresp(status=429)
+            return jresp(payload={"total": 1, "jobPostings": [self._job(0)]})
+
+        jobs, fake = self.run_adapter(
+            workday, workday.fetch_workday,
+            {"url": "https://acme.wd5.myworkdayjobs.com/en-US/External_Careers"},
+            [("POST", "/wday/cxs/acme/External_Careers/jobs", route)])
+        self.assert_contract(jobs)
+        self.assertEqual(seen, [0, 0])  # same offset re-requested, nothing consumed
+
+    def test_429_gives_up_eventually(self):
+        """A board that only ever 429s must surface the error, not retry forever."""
+        with self.assertRaises(RuntimeError):  # FakeResponse.raise_for_status
+            self.run_adapter(
+                workday, workday.fetch_workday,
+                {"url": "https://acme.wd5.myworkdayjobs.com/en-US/Careers"},
+                [("POST", "/wday/cxs/", jresp(status=429))])
+
+    def test_retry_after_header_sets_the_wait(self):
+        """A numeric Retry-After is what the server asked for, so honour it over the
+        default backoff — but a junk value must fall back, not crash."""
+        waits = []
+
+        def run(retry_after):
+            waits.clear()
+            responses = [jresp(status=429, headers={"Retry-After": retry_after}),
+                         jresp(payload={"total": 1, "jobPostings": [self._job(0)]})]
+            fake = FakeRequests([("POST", "/wday/cxs/", lambda u, **kw: responses.pop(0))])
+            with mock.patch.object(workday, "requests", fake), \
+                 mock.patch("time.sleep", lambda s: waits.append(s)):
+                workday.fetch_workday(
+                    {"url": "https://acme.wd5.myworkdayjobs.com/en-US/Careers"})
+
+        run("7")
+        self.assertEqual(waits, [7.0])
+        run("Wed, 21 Oct 2026 07:28:00 GMT")  # HTTP-date form — not parsed
+        self.assertEqual(waits, [workday._BACKOFF])
+
+    def test_pod_is_the_pool_key(self):
+        """Two tenants on one pod share a rate limit, so they must share a pool —
+        and the tenant-less myworkdaysite.com form must not key on its own pod label."""
+        self.assertEqual(workday._pod("acme.wd5.myworkdayjobs.com"),
+                         workday._pod("other.wd5.myworkdayjobs.com"))
+        self.assertNotEqual(workday._pod("acme.wd5.myworkdayjobs.com"),
+                            workday._pod("acme.wd3.myworkdayjobs.com"))
+        self.assertEqual(workday._pod("wd3.myworkdaysite.com"), "wd3.myworkdaysite.com")
+
+    def test_page_failure_fails_the_board(self):
+        """A failure on any page must surface, not silently return a partial board —
+        the fan-out has already fetched the later pages by the time it is raised."""
+        def route(url, **kw):
+            if kw["json"]["offset"] == 40:
+                return jresp(status=500)
+            return jresp(payload={"total": 100, "jobPostings": [self._job(0)]})
+
+        with self.assertRaises(RuntimeError):  # FakeResponse.raise_for_status
+            self.run_adapter(
+                workday, workday.fetch_workday,
+                {"url": "https://acme.wd5.myworkdayjobs.com/en-US/External_Careers"},
+                [("POST", "/wday/cxs/acme/External_Careers/jobs", route)])
+
+    def test_empty_first_page_issues_no_fan_out(self):
+        """An empty page 0 means nothing to page through, whatever `total` claims."""
+        jobs, fake = self.run_adapter(
+            workday, workday.fetch_workday,
+            {"url": "https://acme.wd5.myworkdayjobs.com/en-US/External_Careers"},
+            [("POST", "/wday/cxs/acme/External_Careers/jobs",
+              jresp(payload={"total": 100, "jobPostings": []}))])
+        self.assertEqual(jobs, [])
+        self.assertEqual(len(fake.calls), 1)
+
     def test_resolve_multi_location_expands_placeholder(self):
         list_payload = {"total": 1, "jobPostings": [self._job(0, loc="3 Locations")]}
         detail_payload = {"jobPostingInfo": {"location": "Toronto",
