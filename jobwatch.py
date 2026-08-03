@@ -36,7 +36,10 @@ from adapters.successfactors import fetch_successfactors
 from adapters.ukg import fetch_ukg
 from adapters.workday import fetch_workday
 
-MAX_WORKERS = 8  # how many boards to fetch at once
+# How many boards to fetch at once. The threads are almost entirely idle waiting on
+# network, so this can run well above the core count; past ~32 the run is bound by the
+# slowest single board rather than by throughput. Override with `max_workers` in config.
+MAX_WORKERS = 32
 
 HERE = Path(__file__).resolve().parent
 CONFIG_PATH = HERE / "config.json"
