@@ -127,6 +127,26 @@ class TestEmbeddedSignature(unittest.TestCase):
         self.assertEqual(res.type, "oracle")
         self.assertNotIn("host", res.config)
 
+    def test_smartrecruiters_vanity_pins_real_company(self):
+        # A vanity careers page's first path segment is meaningless ("company") —
+        # probe must pin the company id embedded in the page instead, or the board
+        # is added silently broken (the API answers 200 + zero jobs for a bad id).
+        html = ('<script src="https://static.smartrecruiters.com/job-widget/1.6.2/'
+                'script/smart_widget.js"></script>'
+                '<script>widget({"company_code": "Assent"})</script>')
+        res = run_probe("https://www.assent.com/company/careers/search/",
+                        [("www.assent.com", page(html))])
+        self.assertEqual(res.type, "smartrecruiters")
+        self.assertEqual(res.config["company"], "Assent")
+
+    def test_smartrecruiters_on_ats_host_uses_path_segment(self):
+        # On careers.smartrecruiters.com the first path segment IS the company id.
+        html = "<html>smartrecruiters.com</html>"
+        res = run_probe("https://careers.smartrecruiters.com/AECOM2",
+                        [("careers.smartrecruiters.com", page(html))])
+        self.assertEqual(res.type, "smartrecruiters")
+        self.assertEqual(res.config["company"], "AECOM2")
+
 
 class TestGuessedSlug(unittest.TestCase):
     def test_guess_from_domain_label(self):

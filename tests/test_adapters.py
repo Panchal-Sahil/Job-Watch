@@ -212,6 +212,71 @@ class TestSmartRecruiters(AdapterTestCase):
         posts = [c for c in fake.calls if c[0] == "GET"]
         self.assertEqual(len(posts), 2)  # exactly two pages, no spin
 
+    def test_vanity_company_resolved_from_page(self):
+        """On a vanity domain the path segment is not the company id, so it is
+        resolved from the page and the API is queried with THAT id."""
+        page = ('<html><script>widget({"company_code": "Dexterra",'
+                '"job_title": "true"})</script></html>')
+        posting = {"id": "j1", "name": "Cleaner",
+                   "location": {"city": "Calgary", "region": "AB", "country": "CA"},
+                   "releasedDate": "2026-02-01T00:00:00Z"}
+        jobs, fake = self.run_adapter(
+            smartrecruiters, smartrecruiters.fetch_smartrecruiters,
+            {"name": "Dexterra Group", "url": "https://dexterra.com/en-ca/careers/find-a-job/"},
+            [("GET", "dexterra.com/en-ca/careers/find-a-job/", jresp(text=page)),
+             ("GET", "api.smartrecruiters.com/v1/companies/Dexterra/postings",
+              jresp(payload={"totalFound": 1, "content": [posting]}))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["id"], "smartrecruiters:Dexterra:j1")
+        # "en-ca" must never be queried — that's the bug this guards.
+        self.assertFalse([u for m, u, _ in fake.calls if "companies/en-ca/" in u])
+
+    def test_on_ats_host_needs_no_page_lookup(self):
+        """careers.smartrecruiters.com/<company> is authoritative — don't fetch the page."""
+        posting = {"id": "j2", "name": "Engineer",
+                   "location": {"city": "Ottawa", "region": "ON", "country": "CA"},
+                   "releasedDate": "2026-02-01T00:00:00Z"}
+        jobs, fake = self.run_adapter(
+            smartrecruiters, smartrecruiters.fetch_smartrecruiters,
+            {"name": "General Dynamics", "url": "https://careers.smartrecruiters.com/GDMSI/"},
+            [("GET", "api.smartrecruiters.com/v1/companies/GDMSI/postings",
+              jresp(payload={"totalFound": 1, "content": [posting]}))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["id"], "smartrecruiters:GDMSI:j2")
+        self.assertTrue(all("api.smartrecruiters.com" in u for m, u, _ in fake.calls),
+                        "on-ATS board must not fetch the careers page")
+
+    def test_stale_pinned_company_self_heals(self):
+        """A wrong/stale pinned id returns 200 + zero postings rather than raising,
+        so an empty first page re-resolves once from the page and retries."""
+        page = '<a href="https://jobs.smartrecruiters.com/EgisGroup/744000141166055">Job</a>'
+        posting = {"id": "j3", "name": "Architect",
+                   "location": {"city": "Paris", "region": "", "country": "FR"},
+                   "releasedDate": "2026-02-02T00:00:00Z"}
+        jobs, fake = self.run_adapter(
+            smartrecruiters, smartrecruiters.fetch_smartrecruiters,
+            {"name": "Egis", "company": "jobs", "url": "https://jobs.egis-group.com/jobs"},
+            [("GET", "api.smartrecruiters.com/v1/companies/jobs/postings",
+              jresp(payload={"totalFound": 0, "content": []})),
+             ("GET", "jobs.egis-group.com/jobs", jresp(text=page)),
+             ("GET", "api.smartrecruiters.com/v1/companies/EgisGroup/postings",
+              jresp(payload={"totalFound": 1, "content": [posting]}))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["id"], "smartrecruiters:EgisGroup:j3")
+
+    def test_extract_smartrecruiters_company(self):
+        ex = smartrecruiters.extract_smartrecruiters_company
+        self.assertEqual(ex('x widget({"company_code": "Assent", "n": 1})'), "Assent")
+        self.assertEqual(ex('<a href="//jobs.smartrecruiters.com/Dexterra/744000140521671">'),
+                         "Dexterra")
+        self.assertEqual(ex('smartrecruiters.com/my-applications/EgisGroup?dcr_ci=EgisGroup'),
+                         "EgisGroup")
+        # An asset path must not be mistaken for a company id.
+        self.assertIsNone(
+            ex('<script src="https://static.smartrecruiters.com/job-widget/1.6.2/'
+               'script/smart_widget.js"></script>'))
+        self.assertIsNone(ex("<html>nothing here</html>"))
+
 
 class TestOracle(AdapterTestCase):
     def test_pages_and_stops_on_total(self):

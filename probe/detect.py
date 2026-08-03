@@ -223,9 +223,20 @@ def _build_config(res, url, slug, html=""):
             entry[OVERRIDE_FIELD[atype]] = slug
             entry["url"] = url
     elif atype == "smartrecruiters":
+        # On careers./jobs.smartrecruiters.com the first path segment *is* the
+        # company id. On a vanity domain it is not ("company", "en-ca", "jobs") —
+        # pin the real id embedded in the page instead of a meaningless segment.
+        host = urlparse(url).netloc.lower()
+        on_ats = any(_host_matches(host, p) for t, p in HOST_RULES if t == atype)
         segs = [s for s in urlparse(url).path.split("/") if s]
-        if segs:
-            entry["company"] = segs[0]
+        if on_ats:
+            if segs:
+                entry["company"] = segs[0]
+        else:
+            from adapters.smartrecruiters import extract_smartrecruiters_company
+            real = extract_smartrecruiters_company(html)
+            if real:
+                entry["company"] = real
         entry["url"] = url
     elif atype == "oracle":
         # Vanity CE domains (careers.oracle.com, jobs.akamai.com) proxy the UI but
