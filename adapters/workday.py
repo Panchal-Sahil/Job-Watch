@@ -75,6 +75,13 @@ def fetch_workday(board):
     # (Only that path — a pinned or recruiting/<tenant> tenant is already literal.)
     retry_underscore = from_host and "-" in tenant
 
+    # Resolving a "N Locations" placeholder costs a request per posting, and on a big
+    # board most postings are filtered out on their title alone — in which case the
+    # real location can't change the outcome. jobwatch supplies the title half of its
+    # filter here so we only pay for postings that could actually be surfaced.
+    # Absent (probe, tests), everything is a candidate — same behavior as before.
+    title_ok = board.get("title_ok") or (lambda _t: True)
+
     jobs = []
     offset, limit = 0, 20
     total = None  # Workday reports total only on the first page; capture it once.
@@ -93,9 +100,12 @@ def fetch_workday(board):
             ext = p.get("externalPath", "")
             bullets = p.get("bulletFields") or [ext]
             location = p.get("locationsText", "").strip()
+            title = p.get("title", "").strip()
             # Resolve "N Locations" placeholders to real city names (one extra
-            # request per affected posting) when enabled in config.
-            if ext and board.get("resolve_multi_location") and _MULTI_LOC_RE.match(location):
+            # request per affected posting) when enabled in config — but only for
+            # titles that could survive the filter (see title_ok above).
+            if (ext and board.get("resolve_multi_location")
+                    and _MULTI_LOC_RE.match(location) and title_ok(title)):
                 resolved = _resolve_locations(host, tenant, site, ext)
                 if resolved:
                     location = resolved
@@ -103,7 +113,7 @@ def fetch_workday(board):
             jobs.append(
                 {
                     "id": f"{tenant}:{bullets[0]}",
-                    "title": p.get("title", "").strip(),
+                    "title": title,
                     "location": location,
                     "posted": p.get("postedOn", "").strip(),
                     "url": f"https://{host}{ext}" if ext else url,

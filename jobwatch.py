@@ -66,10 +66,11 @@ def _keyword_match(keyword, text):
     return _word_match(keyword, text)
 
 
-def matches(job, filters):
-    title = job["title"]
-    loc = job["location"].lower()
-
+def _title_matches(title, filters):
+    """The title half of `matches()`, on its own so adapters can consult it before
+    doing expensive per-job work. A job whose title fails here is dropped by
+    `matches()` no matter what its location turns out to be — which is what makes
+    it safe for an adapter to skip resolving that location (see fetch_board)."""
     # title_groups: a list of keyword-lists. The title must match at least one
     # keyword in EVERY group (AND across groups, OR within a group). Use this to
     # require e.g. (early-career) AND (tech domain). Falls back to the simpler
@@ -86,6 +87,15 @@ def matches(job, filters):
 
     title_none = filters.get("title_none", [])
     if any(_keyword_match(k, title) for k in title_none):
+        return False
+
+    return True
+
+
+def matches(job, filters):
+    loc = job["location"].lower()
+
+    if not _title_matches(job["title"], filters):
         return False
 
     # location_none: drop foreign postings (e.g. "Richmond, VA, United States"),
@@ -171,6 +181,18 @@ def _resolve_multi_location():
     return _RESOLVE_MULTI_LOC
 
 
+_FILTERS = None
+
+
+def _filters():
+    """The `filters` object from config. Read here (not just in main()) so that
+    fetch_board can hand adapters the title predicate — see `title_ok` below."""
+    global _FILTERS
+    if _FILTERS is None:
+        _FILTERS = load_json(CONFIG_PATH, {}).get("filters", {})
+    return _FILTERS
+
+
 def fetch_board(board):
     """Fetch one board. Returns (name, jobs, error) — never raises, so one bad
     board can't sink the whole run. Safe to call from worker threads."""
@@ -186,6 +208,13 @@ def fetch_board(board):
     # so the policy lives in config.json (top-level) but stays per-board overridable.
     if "resolve_multi_location" not in board and _resolve_multi_location():
         board = {**board, "resolve_multi_location": True}
+    # An advisory hint, not part of the adapter contract: an adapter that is about
+    # to spend a request enriching one job can ask whether its title stands any
+    # chance of surviving the filter. Ignoring it is always correct — matches()
+    # still runs in full below — so this can only skip work, never surface a job
+    # that wouldn't otherwise appear.
+    if "title_ok" not in board:
+        board = {**board, "title_ok": lambda t: _title_matches(t, _filters())}
     try:
         return name, adapter(board), None
     except Exception as e:
