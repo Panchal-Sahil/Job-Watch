@@ -2,9 +2,7 @@
 
 from urllib.parse import urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA, polite_sleep
+from adapters.common import BROWSER_UA, HTTP, polite_sleep, TIMEOUT
 
 
 def fetch_ukg(board):
@@ -24,7 +22,7 @@ def fetch_ukg(board):
     while True:
         body = {"opportunitySearch": {"Top": 100, "Skip": skip, "QueryString": "",
                                       "OrderBy": [], "Filters": []}}
-        r = requests.post(api, headers=headers, json=body, timeout=30)
+        r = HTTP.post(api, headers=headers, json=body, timeout=TIMEOUT)
         r.raise_for_status()
         data = r.json()
         opps = data.get("opportunities", [])

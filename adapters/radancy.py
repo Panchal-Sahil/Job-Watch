@@ -4,9 +4,7 @@ import html
 import re
 from urllib.parse import urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA, polite_sleep
+from adapters.common import BROWSER_UA, HTTP, polite_sleep, TIMEOUT
 
 
 def fetch_radancy(board):
@@ -39,7 +37,7 @@ def fetch_radancy(board):
     jobs, seen_ids, page = [], set(), 1
     while True:
         sep = "&" if query else ""
-        r = requests.get(f"{base}?{query}{sep}p={page}", headers=ua, timeout=30)
+        r = HTTP.get(f"{base}?{query}{sep}p={page}", headers=ua, timeout=TIMEOUT)
         r.raise_for_status()
         text = r.text
         new = 0

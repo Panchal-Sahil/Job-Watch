@@ -15,9 +15,7 @@ URL like https://jobs.dayforcehcm.com/<locale>/<namespace>/<jobBoardCode>/jobs/<
 import re
 from urllib.parse import urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, new_session, TIMEOUT
 
 PAGE_SIZE = 25  # Dayforce fixes the search page size at 25
 
@@ -40,13 +38,13 @@ def fetch_dayforce(board):
         raise ValueError(f"Could not parse Dayforce namespace/board from URL: {board['url']}")
     company = board.get("name", namespace)
 
-    sess = requests.Session()
+    sess = new_session()
     sess.headers["User-Agent"] = BROWSER_UA
     referer = f"https://{host}/{locale}/{namespace}/{job_board_code}"
 
     # 1) prime cookies, 2) fetch the NextAuth CSRF token
-    sess.get(referer, timeout=30).raise_for_status()
-    csrf = sess.get(f"https://{host}/api/auth/csrf", timeout=30)
+    sess.get(referer, timeout=TIMEOUT).raise_for_status()
+    csrf = sess.get(f"https://{host}/api/auth/csrf", timeout=TIMEOUT)
     csrf.raise_for_status()
     token = csrf.json().get("csrfToken", "")
 
@@ -69,7 +67,7 @@ def fetch_dayforce(board):
             "distanceUnit": 0 if locale.lower().startswith("fr") else 1,
             "paginationStart": start,
         }
-        r = sess.post(api, headers=headers, json=body, timeout=30)
+        r = sess.post(api, headers=headers, json=body, timeout=TIMEOUT)
         r.raise_for_status()
         data = r.json()
         postings = data.get("jobPostings", [])

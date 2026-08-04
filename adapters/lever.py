@@ -2,9 +2,7 @@
 
 import time
 
-import requests
-
-from adapters.common import HEADERS, _slug_from_url
+from adapters.common import HEADERS, HTTP, TIMEOUT, _slug_from_url
 
 
 def fetch_lever(board):
@@ -13,7 +11,7 @@ def fetch_lever(board):
     slug = _slug_from_url(board["url"], "company", board)
     company = board.get("name", slug)
     api = f"https://api.lever.co/v0/postings/{slug}?mode=json"
-    resp = requests.get(api, headers=HEADERS, timeout=30)
+    resp = HTTP.get(api, headers=HEADERS, timeout=TIMEOUT)
     resp.raise_for_status()
     jobs = []
     for p in resp.json():

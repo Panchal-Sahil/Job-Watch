@@ -2,9 +2,7 @@
 
 from urllib.parse import urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, HTTP, TIMEOUT
 
 
 def fetch_bamboohr(board):
@@ -13,9 +11,9 @@ def fetch_bamboohr(board):
     host = urlparse(board["url"]).netloc
     sub = host.split(".")[0]
     company = board.get("name", sub)
-    r = requests.get(f"https://{host}/careers/list",
+    r = HTTP.get(f"https://{host}/careers/list",
                      headers={"User-Agent": BROWSER_UA, "Accept": "application/json"},
-                     timeout=30)
+                     timeout=TIMEOUT)
     r.raise_for_status()
     jobs = []
     for p in r.json().get("result", []):

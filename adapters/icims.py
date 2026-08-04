@@ -30,9 +30,7 @@ import re
 from datetime import datetime
 from urllib.parse import parse_qsl, urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, new_session, TIMEOUT
 
 _HOME_PAGE_SIZE = 10  # careers-home /api/jobs returns 10 jobs per page
 
@@ -96,7 +94,7 @@ def _fetch_careers_home(board):
     # id never shifts — `client_code` isn't present on every row.
     namespace = host
     api = f"https://{host}/api/jobs"
-    sess = requests.Session()
+    sess = new_session()
     sess.headers.update({"User-Agent": BROWSER_UA, "Accept": "application/json"})
 
     terms = board.get("query") or [""]
@@ -110,7 +108,7 @@ def _fetch_careers_home(board):
             params = {"page": page}
             if term:
                 params["keywords"] = term
-            r = sess.get(api, params=params, timeout=30)
+            r = sess.get(api, params=params, timeout=TIMEOUT)
             r.raise_for_status()
             data = r.json()
             rows = data.get("jobs", [])
@@ -151,17 +149,17 @@ def fetch_icims(board):
     base_params = dict(parse_qsl(parsed.query))
     base_params["in_iframe"] = "1"
 
-    sess = requests.Session()
+    sess = new_session()
     sess.headers["User-Agent"] = BROWSER_UA
 
-    first = sess.get(search, params={**base_params, "pr": 0}, timeout=30)
+    first = sess.get(search, params={**base_params, "pr": 0}, timeout=TIMEOUT)
     first.raise_for_status()
     m = _PAGES.search(first.text)
     pages = int(m.group(1)) if m else 1
 
     jobs = _parse_cards(first.text, namespace, company)
     for pr in range(1, pages):
-        r = sess.get(search, params={**base_params, "pr": pr}, timeout=30)
+        r = sess.get(search, params={**base_params, "pr": pr}, timeout=TIMEOUT)
         r.raise_for_status()
         jobs.extend(_parse_cards(r.text, namespace, company))
     return jobs

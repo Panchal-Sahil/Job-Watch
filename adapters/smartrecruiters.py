@@ -3,9 +3,7 @@
 import re
 from urllib.parse import urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA, _slug_from_url, polite_sleep
+from adapters.common import BROWSER_UA, HTTP, polite_sleep, TIMEOUT, _slug_from_url
 
 # A vanity careers page (www.assent.com/company/careers/, dexterra.com/en-ca/...)
 # has no company id in its path — the real one is embedded in the page, either in
@@ -37,7 +35,7 @@ def extract_smartrecruiters_company(html):
 
 def _resolve_vanity_company(url):
     """Fetch the vanity careers page and pull the real company id out of it."""
-    r = requests.get(url, headers={"User-Agent": BROWSER_UA}, timeout=30)
+    r = HTTP.get(url, headers={"User-Agent": BROWSER_UA}, timeout=TIMEOUT)
     return extract_smartrecruiters_company(r.text)
 
 
@@ -67,8 +65,8 @@ def fetch_smartrecruiters(board):
     offset, limit, total = 0, 100, None
     while True:
         api = f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings"
-        r = requests.get(api, headers={"User-Agent": BROWSER_UA},
-                         params={"limit": limit, "offset": offset}, timeout=30)
+        r = HTTP.get(api, headers={"User-Agent": BROWSER_UA},
+                         params={"limit": limit, "offset": offset}, timeout=TIMEOUT)
         r.raise_for_status()
         data = r.json()
         postings = data.get("content", [])

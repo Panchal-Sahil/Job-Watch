@@ -6,9 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
-import requests
-
-from adapters.common import HEADERS, polite_sleep
+from adapters.common import HEADERS, HTTP, polite_sleep, TIMEOUT
 
 # Workday's list endpoint collapses a posting tied to several offices into a count
 # placeholder ("2 Locations") instead of city names — which defeats location filters.
@@ -77,7 +75,7 @@ def _post_page(endpoint, offset):
     """
     body = {"appliedFacets": {}, "limit": _PAGE_LIMIT, "offset": offset, "searchText": ""}
     for attempt in range(_MAX_ATTEMPTS):
-        resp = requests.post(endpoint, headers=HEADERS, json=body, timeout=30)
+        resp = HTTP.post(endpoint, headers=HEADERS, json=body, timeout=TIMEOUT)
         if resp.status_code != 429 or attempt == _MAX_ATTEMPTS - 1:
             return resp
         # Honour Retry-After when it's a sane number of seconds, else back off
@@ -96,7 +94,7 @@ def _resolve_locations(host, tenant, site, ext):
     "City A, City B". Returns "" on any failure so the caller keeps the placeholder."""
     try:
         detail = f"https://{host}/wday/cxs/{tenant}/{site}{ext}"
-        resp = requests.get(detail, headers=HEADERS, timeout=30)
+        resp = HTTP.get(detail, headers=HEADERS, timeout=TIMEOUT)
         resp.raise_for_status()
         info = resp.json().get("jobPostingInfo", {})
         locs = [info.get("location", "").strip()] + [

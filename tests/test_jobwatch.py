@@ -16,6 +16,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import jobwatch
+from adapters import common
 
 # Shaped like the real config: (early-career) AND (tech domain), minus senior roles.
 FILTERS = {
@@ -106,6 +107,60 @@ class TestPrefilterInvariant(unittest.TestCase):
             for loc in self.LOCATIONS:
                 with self.subTest(title=title, location=loc):
                     self.assertFalse(jobwatch.matches(job(title, loc), FILTERS))
+
+
+class TestShortError(unittest.TestCase):
+    """The board-status line is the only record of a failure in a redirected run
+    (the full text goes to stderr), so it has to stay self-diagnosing."""
+
+    def test_short_error_is_left_alone(self):
+        msg = "404 Client Error: Not Found for url: https://boards-api.greenhouse.io/x"
+        self.assertEqual(jobwatch._short_error(msg), msg)
+
+    def test_long_error_keeps_head_and_tail(self):
+        """A head-only cut rendered every urllib3 failure as the same prefix. The
+        host is at the front and the cause is at the back — both have to survive."""
+        msg = ("HTTPSConnectionPool(host='careers.capgemini.com', port=443): Max retries "
+               "exceeded with url: /services/recruiting/v1/jobs " + "x" * 200 +
+               " (Caused by ReadTimeoutError('Read timed out. (read timeout=20)'))")
+        out = jobwatch._short_error(msg)
+        self.assertLessEqual(len(out), 140)
+        self.assertIn("careers.capgemini.com", out)
+        self.assertIn("Read timed out", out)
+
+    def test_newlines_are_collapsed(self):
+        self.assertEqual(jobwatch._short_error("a\n  b\tc"), "a b c")
+
+
+class TestSharedSession(unittest.TestCase):
+    """The retry policy's *scope* is the load-bearing part: retrying statuses would
+    duplicate Workday's 429 backoff and would re-ask a permanently closed board."""
+
+    def test_timeout_is_a_connect_read_pair(self):
+        self.assertIsInstance(common.TIMEOUT, tuple)
+        connect, read = common.TIMEOUT
+        self.assertLess(connect, read)
+
+    def test_retries_transport_but_never_statuses(self):
+        retry = common._RETRY
+        self.assertEqual(retry.total, 2)
+        self.assertEqual(retry.connect, 2)
+        self.assertEqual(retry.read, 2)
+        self.assertEqual(retry.status, 0)
+        self.assertFalse(retry.status_forcelist)
+        # allowed_methods=None means "every method", POST included — safe only
+        # because every POST in these adapters is a paging query.
+        self.assertIsNone(retry.allowed_methods)
+
+    def test_shared_session_refuses_cookies(self):
+        """It's shared across boards and threads, so it must not accumulate state."""
+        jar = common.HTTP.cookies
+        self.assertFalse(jar.get_policy().set_ok(mock.Mock(), mock.Mock()))
+
+    def test_new_session_mounts_retries_on_both_schemes(self):
+        sess = common.new_session()
+        for scheme in ("https://", "http://"):
+            self.assertEqual(sess.adapters[scheme].max_retries, common._RETRY)
 
 
 class TestFetchBoard(unittest.TestCase):

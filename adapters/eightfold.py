@@ -4,9 +4,7 @@ import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, new_session, TIMEOUT
 
 # The page embeds its config (HTML-escaped) with the API domain. The cookie
 # block also carries a "domain", so we take the FIRST match — that's the site's
@@ -30,9 +28,9 @@ def fetch_eightfold(board):
     host = urlparse(url).netloc
     ua = {"User-Agent": BROWSER_UA}
 
-    sess = requests.Session()
+    sess = new_session()
     sess.headers.update(ua)
-    page = sess.get(url, timeout=30)
+    page = sess.get(url, timeout=TIMEOUT)
     page.raise_for_status()
 
     m = _CSRF_RE.search(page.text)
@@ -64,7 +62,7 @@ def fetch_eightfold(board):
                       "sort_by": "relevance"}
             if term:
                 params["query"] = term
-            r = sess.get(api, params=params, headers=headers, timeout=30)
+            r = sess.get(api, params=params, headers=headers, timeout=TIMEOUT)
             r.raise_for_status()
             data = r.json().get("data", {}) or {}
             positions = data.get("positions", [])

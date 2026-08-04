@@ -12,9 +12,7 @@ import re
 from html import unescape
 from urllib.parse import urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, HTTP, TIMEOUT
 
 
 _ROW = re.compile(
@@ -33,10 +31,10 @@ def fetch_jazzhr(board):
     host = parsed.netloc
     company = board.get("name", tenant)
 
-    r = requests.get(
+    r = HTTP.get(
         f"https://{host}/apply/jobs",
         headers={"User-Agent": BROWSER_UA},
-        timeout=30,
+        timeout=TIMEOUT,
     )
     r.raise_for_status()
 

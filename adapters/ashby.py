@@ -1,8 +1,6 @@
 """Ashby ATS adapter."""
 
-import requests
-
-from adapters.common import HEADERS, _slug_from_url
+from adapters.common import HEADERS, HTTP, TIMEOUT, _slug_from_url
 
 
 def fetch_ashby(board):
@@ -11,7 +9,7 @@ def fetch_ashby(board):
     slug = _slug_from_url(board["url"], "board", board)
     company = board.get("name", slug)
     api = f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
-    resp = requests.get(api, headers=HEADERS, timeout=30)
+    resp = HTTP.get(api, headers=HEADERS, timeout=TIMEOUT)
     resp.raise_for_status()
     jobs = []
     for p in resp.json().get("jobs", []):

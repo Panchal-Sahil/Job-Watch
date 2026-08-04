@@ -4,9 +4,7 @@ import html
 import json
 from urllib.parse import urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA, polite_sleep
+from adapters.common import BROWSER_UA, HTTP, polite_sleep, TIMEOUT
 
 
 def _extract_js_object(text, marker):
@@ -34,7 +32,7 @@ def fetch_phenom(board):
     company = board.get("name", host)
     ua = {"User-Agent": BROWSER_UA}
 
-    page = requests.get(url, headers=ua, timeout=30)
+    page = HTTP.get(url, headers=ua, timeout=TIMEOUT)
     page.raise_for_status()
     cfg = _extract_js_object(page.text, "var phApp") or {}
     endpoint = cfg.get("widgetApiEndpoint") or f"https://{host}/widgets"
@@ -63,7 +61,7 @@ def fetch_phenom(board):
                 "global": True, "selected_fields": {},
                 "sort": {"order": "", "field": ""}, "locationData": {},
             }
-            r = requests.post(endpoint, headers=headers, json=payload, timeout=30)
+            r = HTTP.post(endpoint, headers=headers, json=payload, timeout=TIMEOUT)
             r.raise_for_status()
             rs = r.json().get("refineSearch", {})
             data = rs.get("data", {}) or {}

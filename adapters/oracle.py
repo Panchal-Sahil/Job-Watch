@@ -3,9 +3,7 @@
 import re
 from urllib.parse import urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA, polite_sleep
+from adapters.common import BROWSER_UA, HTTP, polite_sleep, TIMEOUT
 
 # Vanity domains (careers.oracle.com, jobs.akamai.com, jobs.nokia.com, ...) proxy
 # the CE *UI* but not the /hcmRestApi endpoint — hitting the API on the vanity host
@@ -23,7 +21,7 @@ def extract_oracle_host(html):
 
 def _resolve_vanity_host(url):
     """Fetch the vanity page and pull the real `*.oraclecloud.com` API host from it."""
-    r = requests.get(url, headers={"User-Agent": BROWSER_UA}, timeout=30)
+    r = HTTP.get(url, headers={"User-Agent": BROWSER_UA}, timeout=TIMEOUT)
     return extract_oracle_host(r.text)
 
 
@@ -64,8 +62,8 @@ def fetch_oracle(board):
         params = {"onlyData": "true",
                   "expand": "requisitionList.secondaryLocations,flexFieldsFacet.values",
                   "finder": finder}
-        r = requests.get(_api(host), headers={"User-Agent": BROWSER_UA},
-                         params=params, timeout=30)
+        r = HTTP.get(_api(host), headers={"User-Agent": BROWSER_UA},
+                         params=params, timeout=TIMEOUT)
         r.raise_for_status()
         try:
             data = r.json()

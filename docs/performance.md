@@ -122,10 +122,27 @@ Two design points that are easy to undo by accident:
 
 Little wall-clock gain, but it bounds the worst case. In value order:
 
-**5a. Timeout tuples.** All 28 call sites pass a bare `timeout=30`, which requests treats as
-*both* connect and read timeout. A host that accepts the TCP connection then stalls burns 30 s
-per request — and across a paging loop that is unbounded per board. Replace with a shared
-`TIMEOUT = (5, 20)` in `adapters/common.py`. Mechanical, and the highest-value item here.
+**5a. Timeout tuples — done.** Every adapter call site passed a bare `timeout=30`, which
+requests treats as *both* connect and read timeout. A host that accepted the TCP connection
+then stalled burned 30 s per request — and across a paging loop that is unbounded per board.
+Now a shared `TIMEOUT = (5, 20)` in `adapters/common.py`.
+
+Done alongside it, because the same run motivated both: adapters reach the network through
+`common.HTTP` (a shared session, cookies refused so it stays safe across boards and threads)
+or `common.new_session()` where a board needs its own cookie jar, both mounting a urllib3
+`Retry` that retries **transport failures only** — `status=0`, no forcelist. That scope is
+deliberate. Retrying statuses would sit underneath `workday._post_page`'s 429 backoff and
+double up on a pod already asking for less, and would re-ask a board that 404s because the
+company closed it.
+
+What prompted it: one run lost Accenture, CPKC and CapGemini — the three heaviest boards —
+to `HTTPSConnectionPool` timeouts, while each of them fetched fine on its own (2000 jobs /
+25.4 s, 175 / 5.6 s, 1761 / 62.6 s). Nothing retried that class of error, so a single blip
+cost a whole board, and `successfactors._fetch_modern`'s paging POST discarded every page
+already collected on the way out. Diagnosing it was harder than it should have been: the
+progress line truncated the error at 50 characters, which is *before* the part that says
+whether it was a timeout or a 404, and the untruncated text went to stderr — which a
+redirected run (`> jobwatch.out`) throws away. Both fixed.
 
 **5b. Per-board deadline.** `fetch_board` stamps a budget onto the board dict; the long paging
 loops check it and return what they have. Today one wedged board holds a worker slot

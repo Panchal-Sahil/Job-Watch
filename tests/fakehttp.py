@@ -64,11 +64,13 @@ def api(payload, status=200):
 
 
 # --- Adapter-level HTTP fake -------------------------------------------------
-# The adapters (unlike probe) call `requests.get`/`requests.post` and
-# `requests.Session()` directly on the module, and several page through a JSON
-# API or run a multi-request handshake. `FakeRequests` stands in for the whole
-# `requests` module (patched as `adapters.<name>.requests`) and routes every
-# call — module-level or via a Session it hands out — through one shared table.
+# The adapters (unlike probe) reach the network through `adapters.common`: the
+# shared `HTTP` session for one-off requests, or `new_session()` for a board that
+# needs its own cookie jar, and several page through a JSON API or run a
+# multi-request handshake. `FakeRequests` exposes the same surface as all three
+# (`.get`, `.post`, `.Session`), so `AdapterTestCase.run_adapter` patches whichever
+# of `HTTP` / `new_session` / `requests` a module imported onto one instance, and
+# every call — direct or via a session it hands out — lands in one shared table.
 
 
 class RequestException(Exception):
