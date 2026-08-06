@@ -15,7 +15,7 @@ from urllib.parse import quote, unquote, urlparse
 
 import requests
 
-from adapters.common import BROWSER_UA, polite_sleep
+from adapters.common import BROWSER_UA, HTTP, new_session, polite_sleep, TIMEOUT
 
 # Canadian province/territory codes, used to recover clean locations from SF slugs.
 CA_PROV = {"ON", "BC", "QC", "AB", "MB", "SK", "NS", "NB", "NL", "PE", "YT", "NT", "NU"}
@@ -62,11 +62,11 @@ def _fetch_modern(url, netloc, company):
     a normalized job list, or None if this site isn't the modern template (the API
     404s / 401s / lacks the expected shape) so the caller can fall back to classic
     tile scraping."""
-    sess = requests.Session()
+    sess = new_session()
     sess.headers["User-Agent"] = BROWSER_UA
     # Warm the session on the board's own page to pick up any required cookies.
     try:
-        sess.get(url, timeout=30)
+        sess.get(url, timeout=TIMEOUT)
     except requests.RequestException:
         return None
     api = f"https://{netloc}/services/recruiting/v1/jobs"
@@ -74,8 +74,16 @@ def _fetch_modern(url, netloc, company):
     while page < 200:  # safety cap
         body = json.dumps({"keywords": "", "locale": "en_US", "location": "",
                            "pageNumber": page, "sortBy": "recent"})
-        r = sess.post(api, headers={"Content-Type": "application/json"},
-                      data=body, timeout=30)
+        # A transport failure that outlived the session's retries used to propagate
+        # from here and cost the entire board — this is the path that lost CPKC and
+        # CapGemini, the two slowest SuccessFactors boards, in a run where both
+        # fetched fine on their own. Treat it exactly like the response-shape
+        # failures below: fall back to tiles on page 0, keep what we have after that.
+        try:
+            r = sess.post(api, headers={"Content-Type": "application/json"},
+                          data=body, timeout=TIMEOUT)
+        except requests.RequestException:
+            return None if page == 0 else jobs
         # A failure *on page 0* means this isn't a modern site (classic sites 401/404
         # this path, or answer without the results block) — return None so the caller
         # scrapes tiles. But once page 0 has proven the site modern, the same symptoms
@@ -154,7 +162,7 @@ def _fetch_classic(parsed, company):
     jobs, startrow = [], 0
     while True:
         sep = "&" if query else ""
-        r = requests.get(f"{base}?{query}{sep}startrow={startrow}", headers=ua, timeout=30)
+        r = HTTP.get(f"{base}?{query}{sep}startrow={startrow}", headers=ua, timeout=TIMEOUT)
         r.raise_for_status()
         tiles = re.findall(r"<li class=\"job-tile.*?</li>", r.text, re.S)
         if not tiles:

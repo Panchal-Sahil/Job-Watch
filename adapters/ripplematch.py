@@ -18,9 +18,7 @@ Response shape:
 
 import html
 
-import requests
-
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, HTTP, TIMEOUT
 
 API = "https://app.ripplematch.com/api/public/jobs/unified"
 
@@ -44,8 +42,8 @@ def fetch_ripplematch(board):
 
     jobs, page = [], 1
     while page <= PAGE_CAP:
-        r = requests.get(API, params={"company": company, "page": page},
-                         headers=headers, timeout=30)
+        r = HTTP.get(API, params={"company": company, "page": page},
+                         headers=headers, timeout=TIMEOUT)
         r.raise_for_status()
         data = r.json()
         pag = data.get("pagination") or {}

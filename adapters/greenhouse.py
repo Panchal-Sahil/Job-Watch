@@ -1,8 +1,6 @@
 """Greenhouse ATS adapter."""
 
-import requests
-
-from adapters.common import HEADERS, _slug_from_url
+from adapters.common import HEADERS, HTTP, TIMEOUT, _slug_from_url
 
 
 def fetch_greenhouse(board):
@@ -11,7 +9,7 @@ def fetch_greenhouse(board):
     token = _slug_from_url(board["url"], "token", board)
     company = board.get("name", token)
     api = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs"
-    resp = requests.get(api, headers=HEADERS, timeout=30)
+    resp = HTTP.get(api, headers=HEADERS, timeout=TIMEOUT)
     resp.raise_for_status()
     jobs = []
     for p in resp.json().get("jobs", []):

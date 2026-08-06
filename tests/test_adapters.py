@@ -14,6 +14,7 @@ scripts responses by (method, url-substring), and assert:
 `time.sleep` is no-opped so the polite inter-page delays don't slow the suite.
 """
 
+import contextlib
 import json
 import os
 import sys
@@ -25,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from adapters import (ashby, avature, bamboohr, dayforce, eightfold, greenhouse,
                       icims, jazzhr, lever, oracle, phenom, radancy, ripplematch,
                       rippling, smartrecruiters, successfactors, ukg, workday)
+from tests import fakehttp
 from tests.fakehttp import FakeRequests, jresp
 
 REQUIRED_KEYS = {"id", "title", "location", "posted", "url", "company"}
@@ -35,8 +37,17 @@ class AdapterTestCase(unittest.TestCase):
 
     def run_adapter(self, module, fetch, board, rules, default=None):
         fake = FakeRequests(rules, default=default)
-        with mock.patch.object(module, "requests", fake), \
-             mock.patch("time.sleep", lambda *a, **k: None):
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch("time.sleep", lambda *a, **k: None))
+            # Adapters reach the network through adapters.common's shared `HTTP`
+            # session, or a per-board one from `new_session()`; which of the two a
+            # module imports depends on whether it needs its own cookie jar, and
+            # successfactors still imports `requests` itself for RequestException.
+            # Patch whichever names this module actually has, all onto one fake.
+            for name, value in (("HTTP", fake), ("new_session", fake.Session),
+                                ("requests", fake)):
+                if hasattr(module, name):
+                    stack.enter_context(mock.patch.object(module, name, value))
             jobs = fetch(board)
         return jobs, fake
 
@@ -449,7 +460,7 @@ class TestWorkday(AdapterTestCase):
             responses = [jresp(status=429, headers={"Retry-After": retry_after}),
                          jresp(payload={"total": 1, "jobPostings": [self._job(0)]})]
             fake = FakeRequests([("POST", "/wday/cxs/", lambda u, **kw: responses.pop(0))])
-            with mock.patch.object(workday, "requests", fake), \
+            with mock.patch.object(workday, "HTTP", fake), \
                  mock.patch("time.sleep", lambda s: waits.append(s)):
                 workday.fetch_workday(
                     {"url": "https://acme.wd5.myworkdayjobs.com/en-US/Careers"})
@@ -670,6 +681,41 @@ class TestSuccessFactorsModern(AdapterTestCase):
         self.assertEqual(len(jobs), 15)  # NOT 0 (the bug), NOT discarded
         self.assertEqual(jobs[0]["id"], "sf:careers.acme.com:0")
         self.assertEqual(jobs[0]["location"], "Vancouver, BC")
+
+    def test_transport_failure_past_page0_keeps_jobs(self):
+        """Regression: a connection/read failure that outlived the session's retries
+        used to propagate out of the paging POST and cost the whole board — the path
+        that lost CPKC and CapGemini in a run where both fetched fine alone. It is
+        now treated like the past-the-end case: keep what has already been collected."""
+        def route(url, **kw):
+            page = json.loads(kw["data"])["pageNumber"]
+            if page == 0:
+                return jresp(payload={"totalJobs": 20,
+                                      "jobSearchResult": [self._item(i) for i in range(10)]})
+            raise fakehttp.RequestException("Read timed out. (read timeout=20)")
+
+        jobs, _ = self.run_adapter(
+            successfactors, successfactors.fetch_successfactors,
+            {"name": "Acme", "url": "https://careers.acme.com/search/"},
+            [("GET", "careers.acme.com/search", jresp(text="ok")),
+             ("POST", "/services/recruiting/v1/jobs", route)])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 10)
+
+    def test_transport_failure_on_page0_falls_back_to_classic(self):
+        """Same failure on page 0 can't distinguish "not a modern site" from "the
+        network blipped", so it takes the existing fallback rather than raising."""
+        def route(url, **kw):
+            raise fakehttp.RequestException("Connection reset by peer")
+
+        jobs, fake = self.run_adapter(
+            successfactors, successfactors.fetch_successfactors,
+            {"name": "Acme", "url": "https://careers.acme.com/search/"},
+            [("GET", "careers.acme.com/search", jresp(text="ok")),
+             ("POST", "/services/recruiting/v1/jobs", route),
+             ("GET", "careers.acme.com/tile-search-results", jresp(text="<html></html>"))])
+        self.assertEqual(jobs, [])
+        self.assertTrue(any("tile-search-results" in c[1] for c in fake.calls))
 
     def test_page0_failure_falls_back_to_classic(self):
         # Page-0 non-OK means "not a modern site" -> None -> classic tile scrape.

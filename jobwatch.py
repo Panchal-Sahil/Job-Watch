@@ -226,6 +226,23 @@ def fetch_board(board):
         return name, [], str(e)
 
 
+def _short_error(error, width=140):
+    """One-line, bounded rendering of a board error for the progress log.
+
+    The untruncated text also goes to stderr, but a run is normally redirected
+    (`python3 jobwatch.py > jobwatch.out`), which sends stderr somewhere else — so
+    in practice this line is the only record. Keeping the head *and* the tail is
+    the point: urllib3 puts the host at the front and the actual cause ("Read timed
+    out", "Connection reset by peer") at the back, so a head-only cut rendered a
+    transient timeout and a permanently closed board as the same useless prefix.
+    """
+    text = " ".join(str(error).split())
+    if len(text) <= width:
+        return text
+    keep = (width - 3) // 2
+    return f"{text[:keep]}...{text[-keep:]}"
+
+
 def main():
     if not CONFIG_PATH.exists():
         sys.exit(
@@ -249,13 +266,16 @@ def main():
         for done, fut in enumerate(as_completed(futures), 1):
             name, jobs, error = fut.result()
             results.append((name, jobs, error))
-            status = f"{len(jobs)} jobs" if error is None else f"ERROR: {error[:50]}"
+            status = (f"{len(jobs)} jobs" if error is None
+                      else f"ERROR: {_short_error(error)}")
             print(f"  [{done:2}/{total}] {name:32} {status}", flush=True)
 
     # Diff + filter sequentially (fast, and keeps `seen` mutation single-threaded).
     new_jobs = []
+    failed = []
     for name, jobs, error in results:
         if error:
+            failed.append(name)
             print(f"  ! {name}: {error}", file=sys.stderr)
             continue
         for job in jobs:
@@ -267,6 +287,12 @@ def main():
             if matches(job, filters):
                 seen.add(job["id"])
                 new_jobs.append(job)
+
+    # Restate the failures on stdout. They already scrolled past in the progress
+    # list, and the detail went to stderr, so a redirected run had no one place
+    # that answered "did more boards than usual fail this time?".
+    if failed:
+        print(f"\n  {len(failed)} board(s) failed: {', '.join(sorted(failed))}")
 
     if new_jobs:
         print(f"\n  {len(new_jobs)} new matching job(s):\n")

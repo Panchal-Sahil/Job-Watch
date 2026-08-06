@@ -2,9 +2,7 @@
 
 from urllib.parse import urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, HTTP, TIMEOUT
 
 
 def fetch_rippling(board):
@@ -14,8 +12,8 @@ def fetch_rippling(board):
     slug = board.get("board") or (segs[0] if segs else None)
     company = board.get("name", slug)
     api = f"https://api.rippling.com/platform/api/ats/v1/board/{slug}/jobs"
-    r = requests.get(api, headers={"User-Agent": BROWSER_UA, "Accept": "application/json"},
-                     timeout=30)
+    r = HTTP.get(api, headers={"User-Agent": BROWSER_UA, "Accept": "application/json"},
+                     timeout=TIMEOUT)
     r.raise_for_status()
     jobs = []
     for p in r.json():

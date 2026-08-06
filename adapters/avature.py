@@ -18,9 +18,7 @@ import re
 from html import unescape
 from urllib.parse import urljoin, urlparse
 
-import requests
-
-from adapters.common import BROWSER_UA
+from adapters.common import BROWSER_UA, HTTP, TIMEOUT
 
 _ART_RE = re.compile(
     r'<article[^>]*article--result[^>]*>(.*?)</article>', re.DOTALL
@@ -118,7 +116,7 @@ def fetch_avature(board):
     page_url = url
 
     for _ in range(200):
-        r = requests.get(page_url, headers={"User-Agent": BROWSER_UA}, timeout=30)
+        r = HTTP.get(page_url, headers={"User-Agent": BROWSER_UA}, timeout=TIMEOUT)
         r.raise_for_status()
         html = r.text
 
