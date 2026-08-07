@@ -5,8 +5,9 @@ been done about it, and what is left. The **[Dead ends](#dead-ends--measured-do-
 section at the bottom matters most: those are changes that look obviously correct and
 would break the run, with the HTTP responses proving it.
 
-All figures here are measurements against the live boards in `config.json` (303 boards),
-not estimates, unless explicitly marked as modelled.
+All figures here are measurements against the live boards in `config.json` at the time
+(303 boards; config has since grown to 693+), not estimates, unless explicitly marked
+as modelled.
 
 ## Where it stands
 
