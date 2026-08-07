@@ -1,0 +1,64 @@
+{
+  "query_terms": [
+    "intern",
+    "co-op",
+    "coop",
+    "student",
+    "apprentice"
+  ],
+  "resolve_multi_location": true,
+  "filters": {
+    "title_groups": [
+      [
+        "intern", "internship", "co-op", "coop", "co op",
+        "student", "early talent", "early career", "university",
+        "apprentice", "trainee", "placement", "work term",
+        "re:\\bI\\b(?=\\s*[(,\u2013\u2014-]|\\s*$)"
+      ],
+      [
+        "software", "developer", "development", "data", "analytics",
+        "security", "cyber", "devops", "cloud", "systems", "network",
+        "ai", "machine learning", "automation", "qa", "quality assurance",
+        "it", "information technology", "computer", "application"
+      ]
+    ],
+    "title_none": [
+      "senior", "sr.", "sr", "staff", "principal", "lead", "manager",
+      "director", "vp", "head of", "mechanical", "electrical", "civil",
+      "structural", "sales", "marketing", "construction", "tax",
+      "re:\\b(II|III|IV)\\b"
+    ],
+    "location_any": [
+      "canada", "ontario", "british columbia", "alberta", "quebec",
+      "toronto", "vancouver", "montreal", "ottawa", "calgary",
+      ", on", ", bc", ", qc", ", ab"
+    ],
+    "location_none": [
+      "united states", "usa", "u.s.", "united kingdom", "india"
+    ],
+    "location_rescue": [
+      "canada", "ontario", "british columbia", "alberta", "quebec",
+      ", on", ", bc", ", qc", ", ab"
+    ]
+  },
+  "boards": [
+    { "name": "Shopify", "type": "workday",
+      "url": "https://shopify.wd3.myworkdayjobs.com/en-CA/external" },
+    { "name": "Stripe", "type": "greenhouse",
+      "url": "https://job-boards.greenhouse.io/stripe" },
+    { "name": "Cloudflare", "type": "greenhouse",
+      "url": "https://boards.greenhouse.io/cloudflare" },
+    { "name": "Spotify", "type": "lever",
+      "url": "https://jobs.lever.co/spotify" },
+    { "name": "1Password", "type": "ashby",
+      "url": "https://jobs.ashbyhq.com/1password" },
+    { "name": "Nokia", "type": "oracle", "host": "ehcz.fa.us2.oraclecloud.com",
+      "url": "https://jobs.nokia.com/en/sites/CX_1" },
+    { "name": "Palo Alto Networks", "type": "radancy",
+      "url": "https://jobs.paloaltonetworks.com/en/jobs/" },
+    { "name": "KPMG", "type": "icims",
+      "url": "https://students-kpmgca.icims.com/jobs" },
+    { "name": "Ubisoft", "type": "smartrecruiters", "company": "Ubisoft2",
+      "url": "https://jobs.smartrecruiters.com/Ubisoft2" }
+  ]
+}
