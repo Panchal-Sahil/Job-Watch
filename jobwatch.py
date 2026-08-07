@@ -10,6 +10,7 @@ package (`adapters/<platform>.py`) that returns the normalized job shape; the
 adapters are wired into the `ADAPTERS` registry below.
 """
 
+import argparse
 import json
 import re
 import sys
@@ -262,12 +263,19 @@ def _short_error(error, width=140):
     return f"{text[:keep]}...{text[-keep:]}"
 
 
+def _parse_args():
+    p = argparse.ArgumentParser(description="Poll ATS boards and print new matching jobs.")
+    p.add_argument("--board", "-b", help="Only fetch boards whose name contains this string (case-insensitive)")
+    return p.parse_args()
+
+
 def main():
     if not CONFIG_PATH.exists():
         sys.exit(
             f"No config found. Copy config.example.json to {CONFIG_PATH.name} and add your boards."
         )
 
+    args = _parse_args()
     config = load_json(CONFIG_PATH, {})
     filters = config.get("filters", {})
     boards = config.get("boards", [])
@@ -276,9 +284,16 @@ def main():
     common.DELAY_SCALE = config.get("request_delay_scale", common.DELAY_SCALE)
     seen = set(load_json(SEEN_PATH, []))
 
+    if args.board:
+        needle = args.board.lower()
+        boards = [b for b in boards if needle in b.get("name", "").lower()
+                  or needle in b.get("url", "").lower()]
+        if not boards:
+            sys.exit("No boards matched the filter.")
+
     # Fetch every board concurrently; total time ~= the slowest single board.
     total = len(boards)
-    print(f"Fetching {total} boards (up to {workers} at a time)...", flush=True)
+    print(f"Fetching {total} board(s) (up to {workers} at a time)...", flush=True)
     results = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(fetch_board, b) for b in boards]
