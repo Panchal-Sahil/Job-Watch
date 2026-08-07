@@ -1,7 +1,13 @@
 # Job Watch
-Polls company **ATS career boards** and prints jobs that match your
-filters. Tracks what you've seen, so each run shows only what's **new**.
+
+Job aggregators rank results by algorithm, not by what you care about,
+and they're often hours or days behind the company's own career page. This
+tool skips the middleman: polls company career boards, applies filters you
+define, and shows you what's new since you last checked.
+
+Tracks what you've seen, so each run shows only what's **new**.
 Terminal-only, no accounts, no database.
+This tool reads publicly available career board APIs for personal use.
 
 Supports 18 ATS platforms. Other types plug in as small adapters.
 
