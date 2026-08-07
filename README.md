@@ -3,7 +3,7 @@ Polls company **ATS career boards** directly and prints jobs that match your
 filters. Remembers what it has already shown you, so each run only surfaces
 what's **new** since last time. Terminal-only, no accounts, no database.
 
-Supports 17 ATS platforms. Other types plug in as small adapters.
+Supports 18 ATS platforms. Other types plug in as small adapters.
 
 | ATS | URL looks like | config `type` |
 |-----|----------------|---------------|
@@ -24,6 +24,7 @@ Supports 17 ATS platforms. Other types plug in as small adapters.
 | Eightfold | `<host>/careers?...&pid=...&sort_by=...` (page has `pcsxConfig`) | `eightfold` |
 | RippleMatch | `app.ripplematch.com/v2/public/company/<slug>` | `ripplematch` |
 | JazzHR | `<tenant>.applytojob.com/apply` | `jazzhr` |
+| Avature | `<host>/en_US/careers/SearchJobs/?...` (page loads `avacdn.net`) | `avature` |
 
 - **Greenhouse/Lever/Ashby**: slug is read from the last path segment; override
   with `"token"`/`"company"`/`"board"`.
@@ -49,10 +50,16 @@ A board's own `"query"` overrides it; leave a board's `query` unset to use the l
 - **Oracle HCM**: uses the public Candidate Experience REST API (clean JSON).
   Vanity domains (e.g. `jobs.nokia.com`) only proxy the UI, not the API — for
   those, pass the real `*.oraclecloud.com` backend via `"host": "..."`.
+- **Avature**: vanity portals (`jobs.siemens.com`, `emplois.bnc.ca`, `jobs.ea.com`)
+  with no public JSON API — the jobs are scraped from the listing HTML and paged by
+  following the "Next" link. Put the company's early-career filter params **in the
+  board URL**; they're applied server-side, and there's no keyword search to fall
+  back on.
 
-Note: Phenom and SuccessFactors are HTML/keyword-scraped rather than clean JSON
-APIs, so they're a bit more fragile — a site redesign can break them, and not
-every company on those platforms exposes the standard endpoints.
+Note: Phenom, SuccessFactors, Eightfold, the iCIMS careers-home SPA, JazzHR and
+Avature are HTML/keyword-scraped rather than clean JSON APIs, so they're a bit more
+fragile — a site redesign can break them, and not every company on those platforms
+exposes the standard endpoints.
 
 ## Setup
 
@@ -137,6 +144,12 @@ matching mid/senior "III" roles.
   at least one of these. Ignored when `title_groups` is set.
 - `title_none` — drop a job if its title contains any of these (e.g. `senior`).
 - `location_any` — keep only if the location contains one of these.
+- `location_none` — drop a job if its location contains any of these. This is how
+  foreign postings get filtered out.
+- `location_rescue` — the exception to `location_none`: a location matching one of
+  these is kept even though `location_none` matched it. Needed because a single
+  posting can name several countries at once — "Remote (US | Canada)" is dropped by
+  a `location_none` of `united states` unless `canada` is in the rescue list.
 
 ### Tuning it
 To **broaden** results, add words to a group (more synonyms = more matches).
