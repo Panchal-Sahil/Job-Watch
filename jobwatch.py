@@ -267,6 +267,7 @@ def _parse_args():
     p = argparse.ArgumentParser(description="Poll ATS boards and print new matching jobs.")
     p.add_argument("--board", "-b", help="Only fetch boards whose name contains this string (case-insensitive)")
     p.add_argument("--type", "-t", help="Only fetch boards of this ATS type (e.g. greenhouse, workday)")
+    p.add_argument("--raw", action="store_true", help="Skip filtering — show all jobs, not just matches")
     return p.parse_args()
 
 
@@ -319,10 +320,7 @@ def main():
         for job in jobs:
             if job["id"] in seen:
                 continue
-            # Only remember jobs we actually surface. Filtered-out jobs are left
-            # unseen so that loosening filters later can still catch them (they
-            # stay silent until they match, so this adds no output noise).
-            if matches(job, filters):
+            if args.raw or matches(job, filters):
                 seen.add(job["id"])
                 new_jobs.append(job)
 
