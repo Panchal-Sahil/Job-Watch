@@ -2,6 +2,9 @@
 __pycache__/
 *.pyc
 
+# User config (boards + filters — copy config.example.json to get started)
+config.json
+
 # Runtime / dedup state (machine-local, regenerated each run)
 seen.json
 
