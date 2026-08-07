@@ -73,7 +73,11 @@ Requires Python 3 and `requests`.
 ```bash
 cp config.example.json config.json
 # edit config.json — add your boards and tune filters
-python3 jobwatch.py
+python3 jobwatch.py                          # poll all boards
+python3 jobwatch.py --board Akamai           # only boards matching "Akamai" (name or URL)
+python3 jobwatch.py --type oracle            # only Oracle boards
+python3 jobwatch.py --board Palo --type radancy  # combine both
+python3 jobwatch.py --board Akamai --raw     # skip filtering, show every job
 ```
 
 ## Identifying a board's ATS (`probe.py`)
