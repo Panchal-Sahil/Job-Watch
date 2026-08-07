@@ -61,6 +61,25 @@ def _word_match(keyword, text):
     return re.search(pat, text, re.IGNORECASE) is not None
 
 
+def _location_match(keyword, text):
+    """Match one location keyword against a location string.
+
+    Locations are free-form ("Toronto, ON, Canada", "Abu Dhabi, Abu Dhabi, ae"),
+    so this stays a substring test rather than a whole-word one — but the match
+    must not run *into* a longer word. Without that, the two-letter province
+    codes swallow city names: ", pe" (Prince Edward Island) matched "East
+    Peoria, Illinois" and rescued US-only Caterpillar postings that
+    location_none had correctly caught, and ", ab" (Alberta) matched "Abu
+    Dhabi". A boundary is only required on an end that is alphanumeric, so
+    punctuation keywords like "u.s." (often title-final) still match."""
+    pat = re.escape(keyword)
+    if keyword[:1].isalnum():
+        pat = r"\b" + pat
+    if keyword[-1:].isalnum():
+        pat = pat + r"\b"
+    return re.search(pat, text, re.IGNORECASE) is not None
+
+
 def _keyword_match(keyword, text):
     """Match one filter keyword against a title. A keyword starting with `re:` is
     treated as a raw, case-sensitive regex (used for things like a trailing
@@ -108,13 +127,13 @@ def matches(job, filters):
     # "Remote (United States | Canada)" and should be kept. The Canada signals
     # live in config.json under "location_rescue".
     loc_none = [k.lower() for k in filters.get("location_none", [])]
-    if loc_none and any(k in loc for k in loc_none):
+    if loc_none and any(_location_match(k, loc) for k in loc_none):
         loc_rescue = [k.lower() for k in filters.get("location_rescue", [])]
-        if not any(c in loc for c in loc_rescue):
+        if not any(_location_match(c, loc) for c in loc_rescue):
             return False
 
     loc_any = [k.lower() for k in filters.get("location_any", [])]
-    if loc_any and not any(k in loc for k in loc_any):
+    if loc_any and not any(_location_match(k, loc) for k in loc_any):
         return False
 
     return True

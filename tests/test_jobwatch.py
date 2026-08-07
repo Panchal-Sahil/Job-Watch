@@ -67,6 +67,19 @@ class TestTitleMatches(unittest.TestCase):
         self.assertTrue(jobwatch._title_matches("ML Intern", FILTERS))
         self.assertFalse(jobwatch._title_matches("HTML Intern", FILTERS))
 
+    def test_trailing_roman_numeral_regex(self):
+        """The entry-level "…Engineer I" rule has to stay anchored to a trailing
+        I, or the bare `\\bI\\b` fires on an initialism like "I&C Engineer" and
+        pulls in senior non-early-career roles."""
+        filters = {"title_groups": [["intern", "re:\\bI\\b(?=\\s*[(,\u2013\u2014-]|\\s*$)"],
+                                    ["software", "systems", "data"]]}
+        for title in ("Software Engineer I",
+                      "Data Engineer I (Production Support)",
+                      "Software Engineer I, Toronto"):
+            self.assertTrue(jobwatch._title_matches(title, filters), title)
+        self.assertFalse(
+            jobwatch._title_matches("I&C Engineer / Control Systems Specialist", filters))
+
     def test_empty_filters_pass_everything(self):
         self.assertTrue(jobwatch._title_matches("Chief Executive Officer", {}))
 
@@ -88,6 +101,46 @@ class TestMatchesLocation(unittest.TestCase):
 
     def test_location_matching_is_case_insensitive(self):
         self.assertTrue(jobwatch.matches(job("Software Intern", "TORONTO, ON"), FILTERS))
+
+    def test_keyword_must_not_run_into_a_longer_word(self):
+        """Regression: location matching is substring-based, so the two-letter
+        province codes used to swallow city names — ", pe" (PEI) matched "East
+        Peoria, Illinois" and ", ab" (Alberta) matched "Abu Dhabi". Both let
+        foreign postings through: the Peoria one via location_rescue, undoing a
+        correct location_none drop."""
+        filters = {**FILTERS,
+                   "location_any": [", ab", ", pe", "canada"],
+                   "location_none": ["illinois"],
+                   "location_rescue": [", pe", "canada"]}
+        self.assertFalse(
+            jobwatch.matches(job("Software Intern", "East Peoria, Illinois"), filters))
+        self.assertFalse(
+            jobwatch.matches(job("Software Intern", "Abu Dhabi, Abu Dhabi, ae"), filters))
+        # the codes still match a real province
+        self.assertTrue(
+            jobwatch.matches(job("Software Intern", "Charlottetown, PE"), filters))
+        self.assertTrue(
+            jobwatch.matches(job("Software Intern", "Calgary, AB"), filters))
+
+    def test_punctuation_keyword_still_matches_at_end_of_string(self):
+        """A boundary is only required on an alphanumeric edge, so "u.s." — which
+        is usually title-final — is not broken by the fix above."""
+        filters = {**FILTERS, "location_none": ["u.s."], "location_rescue": []}
+        self.assertFalse(
+            jobwatch.matches(job("Software Intern", "Toronto, U.S."), filters))
+
+    def test_ambiguous_city_is_dropped_unless_a_province_confirms_it(self):
+        """"London" is in location_any for London, Ontario, but a UK posting can
+        report a bare "London" with no country. Listing it in location_none makes
+        the Canadian one depend on a rescue keyword naming the province."""
+        filters = {**FILTERS,
+                   "location_any": ["london", "toronto", "canada"],
+                   "location_none": ["london"],
+                   "location_rescue": ["ontario", ", on", "canada"]}
+        self.assertFalse(jobwatch.matches(job("Software Intern", "London"), filters))
+        self.assertTrue(
+            jobwatch.matches(job("Software Intern", "London, Ontario, Canada"), filters))
+        self.assertTrue(jobwatch.matches(job("Software Intern", "London, ON"), filters))
 
 
 class TestPrefilterInvariant(unittest.TestCase):
