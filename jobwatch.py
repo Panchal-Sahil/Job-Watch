@@ -266,6 +266,7 @@ def _short_error(error, width=140):
 def _parse_args():
     p = argparse.ArgumentParser(description="Poll ATS boards and print new matching jobs.")
     p.add_argument("--board", "-b", help="Only fetch boards whose name contains this string (case-insensitive)")
+    p.add_argument("--type", "-t", help="Only fetch boards of this ATS type (e.g. greenhouse, workday)")
     return p.parse_args()
 
 
@@ -288,8 +289,11 @@ def main():
         needle = args.board.lower()
         boards = [b for b in boards if needle in b.get("name", "").lower()
                   or needle in b.get("url", "").lower()]
-        if not boards:
-            sys.exit("No boards matched the filter.")
+    if args.type:
+        boards = [b for b in boards if b.get("type", "").lower() == args.type.lower()]
+
+    if not boards:
+        sys.exit("No boards matched the filter.")
 
     # Fetch every board concurrently; total time ~= the slowest single board.
     total = len(boards)
