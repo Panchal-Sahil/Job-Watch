@@ -402,7 +402,7 @@ class TestWorkday(AdapterTestCase):
         self.assert_contract(jobs)
         self.assertEqual(len(jobs), 25)
         self.assertEqual(jobs[0]["id"], "acme:R0")
-        self.assertEqual(jobs[0]["url"], "https://acme.wd5.myworkdayjobs.com/job/0")
+        self.assertEqual(jobs[0]["url"], "https://acme.wd5.myworkdayjobs.com/External_Careers/job/0")
         self.assertEqual(len([c for c in fake.calls if c[0] == "POST"]), 2)
 
     def test_fans_out_remaining_pages_in_offset_order(self):
