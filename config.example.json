@@ -7,6 +7,7 @@
     "apprentice"
   ],
   "resolve_multi_location": true,
+  "workday_pod_limit": 6,
   "filters": {
     "title_groups": [
       [

@@ -46,10 +46,11 @@ _POOLS_LOCK = threading.Lock()
 # pod can be fetching at once from the outer thread pool. Without it, 20+
 # boards sharing a pod (wd5 in practice) fire page-0 requests simultaneously
 # — the resulting burst draws 429s that the retry loop can't clear because
-# every board backs off and retries in sync. 6 boards × 1 page-0 request
-# each, plus 8 paging threads from the pod pool, stays under the ~19
-# concurrent requests per pod that never triggered throttling.
-_POD_LIMIT = 6
+# every board backs off and retries in sync. At the default (6), 6 boards ×
+# 1 page-0 request each plus 8 paging threads stays under the ~19 concurrent
+# requests per pod that never triggered throttling. Override via
+# `workday_pod_limit` in config.json.
+POD_LIMIT = 6
 _SEMS = {}
 _SEMS_LOCK = threading.Lock()
 
@@ -60,7 +61,7 @@ def _sem_for(host):
     with _SEMS_LOCK:
         sem = _SEMS.get(key)
         if sem is None:
-            sem = _SEMS[key] = threading.Semaphore(_POD_LIMIT)
+            sem = _SEMS[key] = threading.Semaphore(POD_LIMIT)
         return sem
 
 # A 429 costs the whole board, so back off and retry rather than fail. Absolute

@@ -35,6 +35,7 @@ from adapters.rippling import fetch_rippling
 from adapters.smartrecruiters import fetch_smartrecruiters
 from adapters.successfactors import fetch_successfactors
 from adapters.ukg import fetch_ukg
+from adapters import workday as workday_mod
 from adapters.workday import fetch_workday
 
 # How many boards to fetch at once. The threads are almost entirely idle waiting on
@@ -284,6 +285,8 @@ def main():
     workers = config.get("max_workers", MAX_WORKERS)
     # Scales every adapter's inter-page pause; see adapters/common.polite_sleep.
     common.DELAY_SCALE = config.get("request_delay_scale", common.DELAY_SCALE)
+    # Per-pod board concurrency for Workday; see adapters/workday.POD_LIMIT.
+    workday_mod.POD_LIMIT = config.get("workday_pod_limit", workday_mod.POD_LIMIT)
     seen = set(load_json(SEEN_PATH, []))
 
     if args.board:
