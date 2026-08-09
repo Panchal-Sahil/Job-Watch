@@ -41,6 +41,28 @@ _PAGE_WORKERS = 8
 _POOLS = {}
 _POOLS_LOCK = threading.Lock()
 
+# Per-pod concurrency limit for board-level fetching. The pod pools limit
+# *paging* concurrency within a pod; this limits how many boards on the same
+# pod can be fetching at once from the outer thread pool. Without it, 20+
+# boards sharing a pod (wd5 in practice) fire page-0 requests simultaneously
+# — the resulting burst draws 429s that the retry loop can't clear because
+# every board backs off and retries in sync. 6 boards × 1 page-0 request
+# each, plus 8 paging threads from the pod pool, stays under the ~19
+# concurrent requests per pod that never triggered throttling.
+_POD_LIMIT = 6
+_SEMS = {}
+_SEMS_LOCK = threading.Lock()
+
+
+def _sem_for(host):
+    """A bounded semaphore for `host`'s pod, created on first use."""
+    key = _pod(host)
+    with _SEMS_LOCK:
+        sem = _SEMS.get(key)
+        if sem is None:
+            sem = _SEMS[key] = threading.Semaphore(_POD_LIMIT)
+        return sem
+
 # A 429 costs the whole board, so back off and retry rather than fail. Absolute
 # seconds, deliberately not scaled by DELAY_SCALE: this is the server telling us to
 # wait, not our own politeness margin.
@@ -173,32 +195,33 @@ def fetch_workday(board):
     # Absent (probe, tests), everything is a candidate — same behavior as before.
     title_ok = board.get("title_ok") or (lambda _t: True)
 
-    # Page 0 stays sequential: it settles the underscore retry (which rewrites the
-    # endpoint) and reports `total`, and both have to be known before the remaining
-    # offsets can be computed and issued at once.
-    while True:
-        resp = _post_page(endpoint, 0)
-        if retry_underscore and resp.status_code in (404, 422):
-            retry_underscore = False
-            tenant = tenant.replace("-", "_")
-            endpoint = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
-            continue  # same offset — nothing was consumed
-        resp.raise_for_status()
-        break
-    data = resp.json()
-    pages = [data.get("jobPostings", [])]
-    total = data.get("total", 0)
+    with _sem_for(host):
+        # Page 0 stays sequential: it settles the underscore retry (which rewrites the
+        # endpoint) and reports `total`, and both have to be known before the remaining
+        # offsets can be computed and issued at once.
+        while True:
+            resp = _post_page(endpoint, 0)
+            if retry_underscore and resp.status_code in (404, 422):
+                retry_underscore = False
+                tenant = tenant.replace("-", "_")
+                endpoint = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
+                continue  # same offset — nothing was consumed
+            resp.raise_for_status()
+            break
+        data = resp.json()
+        pages = [data.get("jobPostings", [])]
+        total = data.get("total", 0)
 
-    # Workday pages by numeric offset and `total` is known now, so the rest of the
-    # requests are all computable up front rather than one-after-another. Ordering
-    # the results by offset keeps the returned list identical to the serial version;
-    # `map` also re-raises the first page's failure, so a bad page still fails the
-    # whole board rather than quietly returning a short list.
-    if pages[0]:
-        pages.extend(_pool_for(host).map(
-            lambda off: _fetch_page(endpoint, off),
-            range(_PAGE_LIMIT, total, _PAGE_LIMIT),
-        ))
+        # Workday pages by numeric offset and `total` is known now, so the rest of the
+        # requests are all computable up front rather than one-after-another. Ordering
+        # the results by offset keeps the returned list identical to the serial version;
+        # `map` also re-raises the first page's failure, so a bad page still fails the
+        # whole board rather than quietly returning a short list.
+        if pages[0]:
+            pages.extend(_pool_for(host).map(
+                lambda off: _fetch_page(endpoint, off),
+                range(_PAGE_LIMIT, total, _PAGE_LIMIT),
+            ))
 
     jobs = []
     for postings in pages:
