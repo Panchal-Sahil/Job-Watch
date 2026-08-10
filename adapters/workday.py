@@ -90,8 +90,11 @@ def _pool_for(host):
         return pool
 
 
+_RETRYABLE = (429, 502, 503, 520)
+
+
 def _post_page(endpoint, offset):
-    """POST one page of the job list, retrying while Workday answers 429.
+    """POST one page of the job list, retrying on transient errors (429, 502, 503, 520).
 
     Returns the response. Any other bad status is left for the caller to raise on,
     so the underscore-tenant retry can still inspect a 404/422 itself.
@@ -99,11 +102,8 @@ def _post_page(endpoint, offset):
     body = {"appliedFacets": {}, "limit": _PAGE_LIMIT, "offset": offset, "searchText": ""}
     for attempt in range(_MAX_ATTEMPTS):
         resp = HTTP.post(endpoint, headers=HEADERS, json=body, timeout=TIMEOUT)
-        if resp.status_code != 429 or attempt == _MAX_ATTEMPTS - 1:
+        if resp.status_code not in _RETRYABLE or attempt == _MAX_ATTEMPTS - 1:
             return resp
-        # Honour Retry-After when it's a sane number of seconds, else back off
-        # exponentially. Sleeping here holds this pod's pool slot, which is the
-        # point — it throttles the pod we're being asked to ease off.
         try:
             wait = float(resp.headers.get("Retry-After", ""))
         except (TypeError, ValueError):
