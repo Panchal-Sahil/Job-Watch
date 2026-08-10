@@ -55,6 +55,15 @@ class TestHostMatch(unittest.TestCase):
         self.assertEqual(res.confidence, "high")
         self.assertEqual(res.config["company"], "Palo Alto Networks")
 
+    def test_jobvite_host_high_confidence(self):
+        html = '<table class="jv-job-list"><tr><td class="jv-job-list-name">' \
+               '<a href="/acme/job/oX1">Eng</a></td></tr></table>'
+        res = run_probe("https://jobs.jobvite.com/acme",
+                        [("jobs.jobvite.com", page(html))])
+        self.assertEqual(res.type, "jobvite")
+        self.assertEqual(res.confidence, "high")
+        self.assertEqual(res.config["type"], "jobvite")
+
     def test_greenhouse_host_reads_slug_from_path(self):
         res = run_probe(
             "https://job-boards.greenhouse.io/acmeco",
@@ -138,6 +147,14 @@ class TestEmbeddedSignature(unittest.TestCase):
                         [("www.assent.com", page(html))])
         self.assertEqual(res.type, "smartrecruiters")
         self.assertEqual(res.config["company"], "Assent")
+
+    def test_jobvite_signature_via_powered_by_footer(self):
+        html = '<a class="jv-powered-by" href="https://www.jobvite.com">' \
+               '<span>Powered by Jobvite</span></a>'
+        res = run_probe("https://careers.acme.com/jobs",
+                        [("careers.acme.com", page(html))])
+        self.assertEqual(res.type, "jobvite")
+        self.assertEqual(res.confidence, "medium")
 
     def test_smartrecruiters_on_ats_host_uses_path_segment(self):
         # On careers.smartrecruiters.com the first path segment IS the company id.

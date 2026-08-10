@@ -10,7 +10,7 @@ open-for-extension: a new platform is a new row, not a new branch.
 SUPPORTED_TYPES = {
     "workday", "greenhouse", "lever", "ashby", "phenom", "successfactors",
     "oracle", "radancy", "smartrecruiters", "bamboohr", "rippling", "ripplematch",
-    "ukg", "dayforce", "icims", "eightfold", "jazzhr", "avature",
+    "ukg", "dayforce", "icims", "eightfold", "jazzhr", "jobvite", "avature",
 }
 
 # (type, host-regex). Matched against the final (post-redirect) URL's host and
@@ -29,6 +29,7 @@ HOST_RULES = [
     ("dayforce", r"(^|\.)jobs\.dayforcehcm\.com$"),
     ("oracle", r"\.oraclecloud\.com$"),
     ("jazzhr", r"\.applytojob\.com$"),
+    ("jobvite", r"(^|\.)jobs\.jobvite\.com$"),
     ("radancy", r"\.talentbrew\.com$|\.tbcdn\.talentbrew"),
     ("successfactors", r"\.sapsf\.com$|\.successfactors\.com$"),
 ]
@@ -61,6 +62,7 @@ HTML_SIGNATURES = [
     ("rippling", r"ats\.rippling\.com", None),
     ("avature", r"avacdn\.net|avature\.portal\.id|avature\.wizard\.registrars", None),
     ("jazzhr", r"applytojob\.com|resumator_even_row|resumator_odd_row", None),
+    ("jobvite", r"jobs\.jobvite\.com|jv-job-list|Powered by Jobvite|jv\.careersite", None),
     ("ukg", r"\.ultipro\.(?:com|ca)|recruiting\.ultipro", None),
     ("successfactors", r"successfactors\.com|rmkcdn|/sfcareer/", None),
     ("workday", r"\.myworkdayjobs\.com|\.myworkdaysite\.com", None),
@@ -68,7 +70,6 @@ HTML_SIGNATURES = [
 
 # Recognised but unsupported — reported by name only (no adapter).
 OTHER_ATS = [
-    ("Jobvite", r"jobvite\.com|jobs\.jobvite"),
     ("IBM/Infinite Brassring (Kenexa)", r"brassring\.com|kenexa"),
     ("Cornerstone OnDemand", r"\.csod\.com|cornerstoneondemand"),
     ("Workable", r"workable\.com|apply\.workable"),
