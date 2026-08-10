@@ -24,8 +24,9 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from adapters import (ashby, avature, bamboohr, dayforce, eightfold, greenhouse,
-                      icims, jazzhr, lever, oracle, phenom, radancy, ripplematch,
-                      rippling, smartrecruiters, successfactors, ukg, workday)
+                      icims, jazzhr, jobvite, lever, oracle, phenom, radancy,
+                      ripplematch, rippling, smartrecruiters, successfactors,
+                      ukg, workday)
 from tests import fakehttp
 from tests.fakehttp import FakeRequests, jresp
 
@@ -1045,6 +1046,61 @@ class TestAvature(AdapterTestCase):
         self.assertEqual(jobs[0]["company"], "Bank")
         self.assertEqual(jobs[1]["id"], "avature:careers.bank.com:22222")
         self.assertEqual(jobs[1]["location"], "Toronto, Ontario")
+
+
+class TestJobvite(AdapterTestCase):
+    """HTML-scraped Jobvite board at jobs.jobvite.com/<slug>."""
+
+    PAGE = (
+        '<table class="jv-job-list"><thead><tr>'
+        '<th scope="col" class="jv-cws-sr-only">Job listing</th>'
+        '<th scope="col" class="jv-cws-sr-only">Job location</th>'
+        '</tr></thead><tbody>'
+        '<tr>'
+        '<td class="jv-job-list-name">'
+        '<a href="/acme/job/oLwqAfw1">Software Intern &amp; Co-op</a>'
+        '</td>'
+        '<td class="jv-job-list-location">'
+        '\n        \n            Toronto,\n            ON\n        \n'
+        '</td>'
+        '</tr>'
+        '<tr>'
+        '<td class="jv-job-list-name">'
+        '<a href="/acme/job/oUvqAfw9">Data Analyst</a>'
+        '</td>'
+        '<td class="jv-job-list-location">'
+        '\n        \n            Vancouver,\n            British Columbia\n        \n'
+        '</td>'
+        '</tr>'
+        '</tbody></table>'
+    )
+
+    def test_normalizes(self):
+        jobs, _ = self.run_adapter(
+            jobvite, jobvite.fetch_jobvite,
+            {"name": "Acme", "url": "https://jobs.jobvite.com/acme"},
+            [("GET", "jobs.jobvite.com/acme", jresp(text=self.PAGE))])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 2)
+        j = jobs[0]
+        self.assertEqual(j["id"], "jobvite:acme:oLwqAfw1")
+        self.assertEqual(j["title"], "Software Intern & Co-op")
+        self.assertEqual(j["location"], "Toronto, ON")
+        self.assertEqual(j["posted"], "")
+        self.assertEqual(j["url"],
+                         "https://jobs.jobvite.com/acme/job/oLwqAfw1")
+        self.assertEqual(j["company"], "Acme")
+        self.assertEqual(jobs[1]["id"], "jobvite:acme:oUvqAfw9")
+        self.assertEqual(jobs[1]["title"], "Data Analyst")
+        self.assertEqual(jobs[1]["location"], "Vancouver, British Columbia")
+
+    def test_empty_board(self):
+        jobs, _ = self.run_adapter(
+            jobvite, jobvite.fetch_jobvite,
+            {"name": "Empty", "url": "https://jobs.jobvite.com/empty"},
+            [("GET", "jobs.jobvite.com/empty",
+              jresp(text='<div class="jv-wrapper">No jobs</div>'))])
+        self.assertEqual(jobs, [])
 
 
 if __name__ == "__main__":
