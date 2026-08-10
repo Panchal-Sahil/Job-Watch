@@ -9,7 +9,7 @@ Tracks what you've seen, so each run shows only what's **new**.
 Terminal-only, no accounts, no database.
 This tool reads publicly available career board APIs for personal use.
 
-Supports 18 ATS platforms. Other types plug in as small adapters.
+Supports 19 ATS platforms. Other types plug in as small adapters.
 
 | ATS | URL looks like | config `type` |
 |-----|----------------|---------------|
@@ -30,6 +30,7 @@ Supports 18 ATS platforms. Other types plug in as small adapters.
 | Eightfold | `<host>/careers?...&pid=...&sort_by=...` (page has `pcsxConfig`) | `eightfold` |
 | RippleMatch | `app.ripplematch.com/v2/public/company/<slug>` | `ripplematch` |
 | JazzHR | `<tenant>.applytojob.com/apply` | `jazzhr` |
+| Jobvite | `jobs.jobvite.com/<slug>` | `jobvite` |
 | Avature | `<host>/en_US/careers/SearchJobs/?...` (page loads `avacdn.net`) | `avature` |
 
 - **Greenhouse/Lever/Ashby**: the slug comes from the last path segment. Override
@@ -61,8 +62,8 @@ A board's own `"query"` takes precedence; leave it unset to use the default.
   the "Next" link. Put the company's early-career filter params **in the
   board URL**; they apply server-side. No keyword search fallback.
 
-Phenom, SuccessFactors, Eightfold, the iCIMS careers-home SPA, JazzHR, and
-Avature scrape HTML or search by keyword rather than reading clean JSON APIs.
+Phenom, SuccessFactors, Eightfold, the iCIMS careers-home SPA, JazzHR, Jobvite,
+and Avature scrape HTML or search by keyword rather than reading clean JSON APIs.
 A site redesign can break them, and not every company on those platforms exposes
 the standard endpoints.
 
@@ -113,7 +114,7 @@ Detection works three ways, strongest first: the URL is an ATS domain; the page
 **white-labels** a Greenhouse/Lever/Ashby backend (probe extracts the real slug
 and confirms via the public API); or probe **guesses** the slug from the domain
 (low confidence, so verify the listed jobs belong to the right company). Probe
-also reports recognized-but-unsupported platforms like Jobvite/Workable, or
+also reports recognized-but-unsupported platforms like Workable/Brassring, or
 `unknown`. Either way you get a ready-to-paste `config.json` entry.
 
 `--add` first **verifies the board works**: probe runs the same fetch jobwatch
@@ -181,10 +182,10 @@ desktop/email/Discord notifications.
 
 ## Adding other ATS platforms
 
-Each ATS is a JSON API returning a list of jobs. Add `adapters/<name>.py` with a
-`fetch_<name>(board)` that returns the normalized job dict (`id, title, location,
-posted, url, company`), then import it into `jobwatch.py` and register it in the
-`ADAPTERS` dict. ~30 lines each. Shared helpers (`HEADERS`, `BROWSER_UA`,
+Each ATS adapter reads a JSON API or scrapes HTML and returns a list of jobs.
+Add `adapters/<name>.py` with a `fetch_<name>(board)` that returns the normalized
+job dict (`id, title, location, posted, url, company`), then import it into
+`jobwatch.py` and register it in the `ADAPTERS` dict. ~30 lines each. Shared helpers (`HEADERS`, `BROWSER_UA`,
 `_slug_from_url`) live in `adapters/common.py`.
 
 Before optimizing an adapter's paging, read

@@ -50,11 +50,11 @@ python3 jobwatch.py
 What you'll see:
 
 ```
-Fetching 155 boards (up to 8 at a time)...
-  [ 1/155] SOTI                             12 jobs
-  [ 2/155] Zebra Technologies               0 jobs
+Fetching 696 boards (up to 32 at a time)...
+  [  1/696] SOTI                             12 jobs
+  [  2/696] Zebra Technologies               0 jobs
   ...
-  [12/155] Some Company                     ERROR: HTTP 403
+  [ 12/696] Some Company                     ERROR: HTTP 403
 
   3 new matching job(s):
 
@@ -118,7 +118,7 @@ Confidence levels:
   are that company's** before trusting it.
 
 Other things it might say:
-- `[NOT SUPPORTED — no adapter]` — recognized the system (e.g. Workable, Jobvite) but
+- `[NOT SUPPORTED — no adapter]` — recognized the system (e.g. Workable, Brassring) but
   jobwatch can't read it yet. See §8 to add support.
 - `unknown` — couldn't identify it. Try pasting the *actual* job-listing URL (sometimes the
   jobs live in an embedded frame with its own URL).
@@ -176,7 +176,7 @@ in the `"boards"` array. Minimal entry:
 ```
 
 The supported `type` values (and what their URLs look like) are listed in **`README.md`** —
-17 systems including `workday`, `greenhouse`, `lever`, `ashby`, `icims`, `oracle`, etc.
+18 systems including `workday`, `greenhouse`, `lever`, `ashby`, `icims`, `oracle`, `jobvite`, etc.
 
 Most boards need only `name`, `type`, `url`. A few need an override when the tool can't
 figure something out from the URL alone — common ones:
@@ -253,8 +253,8 @@ requests"), raise this before changing any code.
 
 ## 7. Testing (does the code still work?)
 
-There's an automated test suite for `probe.py`. It runs offline (no network) in under a
-second. Run it after any change to the probe code:
+There's an automated test suite covering the adapters and probe detection. It runs offline
+(no network) in under a second:
 
 ```bash
 python3 -m unittest discover -s tests
@@ -263,16 +263,14 @@ python3 -m unittest discover -s tests
 You want to see `OK` at the bottom. Run a single test file while iterating:
 
 ```bash
-python3 -m unittest tests.test_detect          # just the detection tests
+python3 -m unittest tests.test_adapters        # adapter contract / regression tests
+python3 -m unittest tests.test_detect          # probe detection tests
 python3 -m unittest tests.test_detect -v       # verbose: list each test
 ```
 
 The tests use Python's built-in `unittest` and fake the network (`tests/fakehttp.py`), so
 they're deterministic — **keep it that way** (no `pip install pytest`); the whole project
 is intentionally zero-extra-dependencies.
-
-> `jobwatch.py` itself has no automated tests yet. To "test" a jobwatch change, just run it
-> against your real boards and eyeball the output.
 
 ### Testing a single board live
 
