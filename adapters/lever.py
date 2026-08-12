@@ -16,6 +16,11 @@ def fetch_lever(board):
     jobs = []
     for p in resp.json():
         cats = p.get("categories") or {}
+        all_locs = cats.get("allLocations") or []
+        if len(all_locs) > 1:
+            location = " ; ".join(all_locs)
+        else:
+            location = (cats.get("location") or "").strip()
         created = p.get("createdAt")
         posted = (
             time.strftime("%Y-%m-%d", time.gmtime(created / 1000)) if created else ""
@@ -24,7 +29,7 @@ def fetch_lever(board):
             {
                 "id": f"lever:{slug}:{p.get('id')}",
                 "title": (p.get("text") or "").strip(),
-                "location": (cats.get("location") or "").strip(),
+                "location": location,
                 "posted": posted,
                 "url": p.get("hostedUrl", board["url"]),
                 "company": company,
