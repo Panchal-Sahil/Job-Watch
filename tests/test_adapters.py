@@ -102,6 +102,27 @@ class TestLever(AdapterTestCase):
         self.assertEqual(j["posted"], "2024-01-01")
         self.assertEqual(j["company"], "acme")  # falls back to slug
 
+    def test_all_locations(self):
+        payload = [{
+            "id": "ml-1", "text": "ML Engineer",
+            "categories": {
+                "location": "Toronto, ON",
+                "allLocations": ["Toronto, ON", "Pittsburgh, PA",
+                                 "San Francisco, CA"],
+            },
+            "createdAt": 1720000000000,
+            "hostedUrl": "https://jobs.lever.co/acme/ml-1",
+        }]
+        jobs, _ = self.run_adapter(
+            lever, lever.fetch_lever,
+            {"url": "https://jobs.lever.co/acme"},
+            [("GET", "api.lever.co/v0/postings/acme",
+              jresp(payload=payload))])
+        self.assert_contract(jobs)
+        self.assertEqual(
+            jobs[0]["location"],
+            "Toronto, ON ; Pittsburgh, PA ; San Francisco, CA")
+
 
 class TestAshby(AdapterTestCase):
     def test_normalizes(self):
