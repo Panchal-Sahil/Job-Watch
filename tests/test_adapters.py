@@ -393,6 +393,26 @@ class TestOracle(AdapterTestCase):
             "fa-extu-saasfaprod1.fa.ocs.oraclecloud.com")
         self.assertIsNone(oracle.extract_oracle_host("<html>no host here</html>"))
 
+    def test_secondary_locations(self):
+        reqs = [{"Id": 1, "Title": "SDE", "PostedDate": "2026-03-01",
+                 "PrimaryLocation": "United States",
+                 "secondaryLocations": [
+                     {"Name": "Toronto, ON, Canada"},
+                     {"Name": "Vancouver, BC, Canada"},
+                 ]}]
+        jobs, _ = self.run_adapter(
+            oracle, oracle.fetch_oracle,
+            {"url": "https://a.fa.us2.oraclecloud.com"
+                    "/hcmUI/CandidateExperience/en/sites/CX_1/jobs"},
+            [("GET", "a.fa.us2.oraclecloud.com/hcmRestApi",
+              jresp(payload={"items": [{"TotalJobsCount": 1,
+                                        "requisitionList": reqs}]}))])
+        self.assert_contract(jobs)
+        self.assertEqual(
+            jobs[0]["location"],
+            "United States ; Toronto, ON, Canada"
+            " ; Vancouver, BC, Canada")
+
 
 class TestUKG(AdapterTestCase):
     def test_pages_and_stops_on_total(self):
