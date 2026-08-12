@@ -118,6 +118,23 @@ class TestAshby(AdapterTestCase):
         self.assertEqual(jobs[0]["id"], "ashby:acme:xyz")
         self.assertEqual(jobs[0]["posted"], "2026-02-01")
 
+    def test_secondary_locations(self):
+        payload = {"jobs": [{
+            "id": "abc", "title": "Intern - SWE", "location": "San Francisco",
+            "secondaryLocations": [
+                {"location": "Toronto"},
+                {"location": "Remote (US)"},
+            ],
+            "publishedDate": "2026-06-01T00:00:00Z",
+            "jobUrl": "https://jobs.ashbyhq.com/acme/abc",
+        }]}
+        jobs, _ = self.run_adapter(
+            ashby, ashby.fetch_ashby,
+            {"url": "https://jobs.ashbyhq.com/acme"},
+            [("GET", "api.ashbyhq.com/posting-api/job-board/acme", jresp(payload=payload))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["location"], "San Francisco ; Toronto ; Remote (US)")
+
 
 class TestBambooHR(AdapterTestCase):
     def test_location_and_remote_fallback(self):
