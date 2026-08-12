@@ -82,10 +82,14 @@ def fetch_oracle(board):
         reqs = item.get("requisitionList", [])
         for p in reqs:
             jid = p.get("Id")
+            locs = [p.get("PrimaryLocation") or ""]
+            for sl in p.get("secondaryLocations") or []:
+                if sl.get("Name"):
+                    locs.append(sl["Name"])
             jobs.append({
                 "id": f"oracle:{host}:{jid}",
                 "title": (p.get("Title") or "").strip(),
-                "location": (p.get("PrimaryLocation") or "").strip(),
+                "location": " ; ".join(locs).strip(),
                 "posted": (p.get("PostedDate") or "")[:10],
                 "url": f"https://{host}/hcmUI/CandidateExperience/en/sites/{site}/job/{jid}",
                 "company": company,
