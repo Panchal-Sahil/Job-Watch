@@ -38,6 +38,7 @@ from adapters.successfactors import fetch_successfactors
 from adapters.ukg import fetch_ukg
 from adapters import workday as workday_mod
 from adapters.workday import fetch_workday
+from adapters.gem import fetch_gem
 
 # How many boards to fetch at once. The threads are almost entirely idle waiting on
 # network, so this can run well above the core count; past ~32 the run is bound by the
@@ -166,6 +167,7 @@ ADAPTERS = {
     "jobvite": fetch_jobvite,
     "eightfold": fetch_eightfold,
     "avature": fetch_avature,
+    "gem": fetch_gem,
 }
 
 

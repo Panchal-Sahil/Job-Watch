@@ -10,7 +10,7 @@ open-for-extension: a new platform is a new row, not a new branch.
 SUPPORTED_TYPES = {
     "workday", "greenhouse", "lever", "ashby", "phenom", "successfactors",
     "oracle", "radancy", "smartrecruiters", "bamboohr", "rippling", "ripplematch",
-    "ukg", "dayforce", "icims", "eightfold", "jazzhr", "jobvite", "avature",
+    "ukg", "dayforce", "icims", "eightfold", "jazzhr", "jobvite", "avature", "gem",
 }
 
 # (type, host-regex). Matched against the final (post-redirect) URL's host and
@@ -32,6 +32,7 @@ HOST_RULES = [
     ("jobvite", r"(^|\.)jobs\.jobvite\.com$"),
     ("radancy", r"\.talentbrew\.com$|\.tbcdn\.talentbrew"),
     ("successfactors", r"\.sapsf\.com$|\.successfactors\.com$"),
+    ("gem", r"(^|\.)jobs\.gem\.com$"),
 ]
 
 # (type, html-regex, slug-capture-regex-or-None). Looked for in the page HTML to
@@ -66,6 +67,7 @@ HTML_SIGNATURES = [
     ("ukg", r"\.ultipro\.(?:com|ca)|recruiting\.ultipro", None),
     ("successfactors", r"successfactors\.com|rmkcdn|/sfcareer/", None),
     ("workday", r"\.myworkdayjobs\.com|\.myworkdaysite\.com", None),
+    ("gem", r"jobs\.gem\.com", None),
 ]
 
 # Recognised but unsupported — reported by name only (no adapter).

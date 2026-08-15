@@ -64,6 +64,14 @@ class TestHostMatch(unittest.TestCase):
         self.assertEqual(res.confidence, "high")
         self.assertEqual(res.config["type"], "jobvite")
 
+    def test_gem_host_high_confidence(self):
+        html = '<html><title>Acme Careers</title></html>'
+        res = run_probe("https://jobs.gem.com/acme",
+                        [("jobs.gem.com", page(html))])
+        self.assertEqual(res.type, "gem")
+        self.assertEqual(res.confidence, "high")
+        self.assertEqual(res.config["type"], "gem")
+
     def test_greenhouse_host_reads_slug_from_path(self):
         res = run_probe(
             "https://job-boards.greenhouse.io/acmeco",

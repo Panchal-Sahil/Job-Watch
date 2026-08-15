@@ -23,7 +23,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters import (ashby, avature, bamboohr, dayforce, eightfold, greenhouse,
+from adapters import (ashby, avature, bamboohr, dayforce, eightfold, gem, greenhouse,
                       icims, jazzhr, jobvite, lever, oracle, phenom, radancy,
                       ripplematch, rippling, smartrecruiters, successfactors,
                       ukg, workday)
@@ -58,6 +58,62 @@ class AdapterTestCase(unittest.TestCase):
             self.assertEqual(set(j), REQUIRED_KEYS,
                              f"job dict keys {set(j)} != contract {REQUIRED_KEYS}")
             self.assertTrue(j["id"], "job id must be non-empty (it's the dedup key)")
+
+
+class TestGem(AdapterTestCase):
+    def test_normalizes(self):
+        payload = [{"data": {
+            "oatsExternalJobPostings": {"jobPostings": [{
+                "id": "int-1", "extId": "ext-1", "title": "Software Intern",
+                "locations": [{"name": "Toronto, ON"}],
+            }]},
+            "jobBoardExternal": {"teamDisplayName": "Acme Corp"},
+        }}]
+        jobs, _ = self.run_adapter(
+            gem, gem.fetch_gem,
+            {"url": "https://jobs.gem.com/acme"},
+            [("POST", "jobs.gem.com/api/public/graphql/batch",
+              jresp(payload=payload))])
+        self.assert_contract(jobs)
+        j = jobs[0]
+        self.assertEqual(j["id"], "gem:acme:ext-1")
+        self.assertEqual(j["title"], "Software Intern")
+        self.assertEqual(j["location"], "Toronto, ON")
+        self.assertEqual(j["company"], "Acme Corp")
+        self.assertEqual(j["url"], "https://jobs.gem.com/acme/ext-1")
+
+    def test_multi_location(self):
+        payload = [{"data": {
+            "oatsExternalJobPostings": {"jobPostings": [{
+                "id": "int-2", "extId": "ext-2", "title": "Designer",
+                "locations": [{"name": "NYC"}, {"name": "Remote"}],
+            }]},
+            "jobBoardExternal": {"teamDisplayName": "Acme"},
+        }}]
+        jobs, _ = self.run_adapter(
+            gem, gem.fetch_gem,
+            {"url": "https://jobs.gem.com/acme"},
+            [("POST", "jobs.gem.com/api/public/graphql/batch",
+              jresp(payload=payload))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["location"], "NYC ; Remote")
+
+    def test_fallback_company(self):
+        payload = [{"data": {
+            "oatsExternalJobPostings": {"jobPostings": [{
+                "id": "int-3", "extId": "ext-3", "title": "PM",
+                "locations": [],
+            }]},
+            "jobBoardExternal": None,
+        }}]
+        jobs, _ = self.run_adapter(
+            gem, gem.fetch_gem,
+            {"url": "https://jobs.gem.com/acme"},
+            [("POST", "jobs.gem.com/api/public/graphql/batch",
+              jresp(payload=payload))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["company"], "acme")
+        self.assertEqual(jobs[0]["location"], "")
 
 
 class TestGreenhouse(AdapterTestCase):
