@@ -275,6 +275,9 @@ def _guess_name(url, atype=None, slug=None):
         elif atype == "jobvite":
             segs = [s for s in urlparse(url).path.split("/") if s]
             base = segs[0] if segs else host.split(".")[0]
+        elif atype == "gem":
+            segs = [s for s in urlparse(url).path.split("/") if s]
+            base = segs[0] if segs else host.split(".")[0]
         elif atype in CONFIRMERS and slug:  # greenhouse / lever / ashby
             base = slug
         else:  # workday, oracle, bamboohr, rippling, ukg, smartrecruiters, radancy
