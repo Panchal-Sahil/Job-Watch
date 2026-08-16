@@ -11,7 +11,7 @@ SUPPORTED_TYPES = {
     "workday", "greenhouse", "lever", "ashby", "phenom", "successfactors",
     "oracle", "radancy", "smartrecruiters", "bamboohr", "rippling", "ripplematch",
     "ukg", "dayforce", "icims", "eightfold", "jazzhr", "jobvite", "avature", "gem",
-    "workable",
+    "workable", "zohorecruit",
 }
 
 # (type, host-regex). Matched against the final (post-redirect) URL's host and
@@ -35,6 +35,7 @@ HOST_RULES = [
     ("successfactors", r"\.sapsf\.com$|\.successfactors\.com$"),
     ("gem", r"(^|\.)jobs\.gem\.com$"),
     ("workable", r"(^|\.)apply\.workable\.com$"),
+    ("zohorecruit", r"\.zohorecruit\.(com|ca|eu|in|com\.au|jp)$"),
 ]
 
 # (type, html-regex, slug-capture-regex-or-None). Looked for in the page HTML to
@@ -71,6 +72,7 @@ HTML_SIGNATURES = [
     ("workday", r"\.myworkdayjobs\.com|\.myworkdaysite\.com", None),
     ("gem", r"jobs\.gem\.com", None),
     ("workable", r"apply\.workable\.com", None),
+    ("zohorecruit", r"\.zohorecruit\.(com|ca|eu|in|com\.au|jp)", None),
 ]
 
 # Recognised but unsupported — reported by name only (no adapter).
