@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from adapters import (ashby, avature, bamboohr, dayforce, eightfold, gem, greenhouse,
                       icims, jazzhr, jobvite, lever, oracle, phenom, radancy,
                       ripplematch, rippling, smartrecruiters, successfactors,
-                      ukg, workday)
+                      ukg, workable, workday)
 from tests import fakehttp
 from tests.fakehttp import FakeRequests, jresp
 
@@ -1215,6 +1215,82 @@ class TestJobvite(AdapterTestCase):
             [("GET", "jobs.jobvite.com/empty",
               jresp(text='<div class="jv-wrapper">No jobs</div>'))])
         self.assertEqual(jobs, [])
+
+
+class TestWorkable(AdapterTestCase):
+    WIDGET_PAYLOAD = {
+        "name": "Acme Corp",
+        "jobs": [
+            {
+                "title": "  Software Intern  ",
+                "shortcode": "ABC123DEF4",
+                "city": "Toronto",
+                "state": "Ontario",
+                "country": "Canada",
+                "published_on": "2026-07-01",
+                "url": "https://apply.workable.com/j/ABC123DEF4",
+                "shortlink": "https://apply.workable.com/j/ABC123DEF4",
+            },
+            {
+                "title": "Data Analyst",
+                "shortcode": "XYZ789GH01",
+                "city": "Vancouver",
+                "state": "British Columbia",
+                "country": "Canada",
+                "published_on": "2026-06-15",
+                "url": "https://apply.workable.com/j/XYZ789GH01",
+                "shortlink": "https://apply.workable.com/j/XYZ789GH01",
+            },
+        ],
+    }
+
+    def test_normalizes(self):
+        jobs, _ = self.run_adapter(
+            workable, workable.fetch_workable,
+            {"name": "Acme", "url": "https://apply.workable.com/acme-corp"},
+            [("GET", "apply.workable.com/api/v1/widget/accounts/acme-corp",
+              jresp(payload=self.WIDGET_PAYLOAD))])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 2)
+        j = jobs[0]
+        self.assertEqual(j["id"], "workable:acme-corp:ABC123DEF4")
+        self.assertEqual(j["title"], "Software Intern")
+        self.assertEqual(j["location"], "Toronto, Ontario, Canada")
+        self.assertEqual(j["posted"], "2026-07-01")
+        self.assertEqual(j["url"], "https://apply.workable.com/j/ABC123DEF4")
+        self.assertEqual(j["company"], "Acme")
+
+    def test_company_from_api(self):
+        jobs, _ = self.run_adapter(
+            workable, workable.fetch_workable,
+            {"url": "https://apply.workable.com/acme-corp"},
+            [("GET", "apply.workable.com/api/v1/widget/accounts/acme-corp",
+              jresp(payload=self.WIDGET_PAYLOAD))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["company"], "Acme Corp")
+
+    def test_empty_board(self):
+        jobs, _ = self.run_adapter(
+            workable, workable.fetch_workable,
+            {"name": "Empty", "url": "https://apply.workable.com/empty"},
+            [("GET", "apply.workable.com/api/v1/widget/accounts/empty",
+              jresp(payload={"name": "Empty", "jobs": []}))])
+        self.assertEqual(jobs, [])
+
+    def test_missing_location_fields(self):
+        payload = {"name": "X", "jobs": [{
+            "title": "Remote Role", "shortcode": "REM001",
+            "city": "", "state": "", "country": "",
+            "published_on": "", "url": "https://apply.workable.com/j/REM001",
+        }]}
+        jobs, _ = self.run_adapter(
+            workable, workable.fetch_workable,
+            {"url": "https://apply.workable.com/x"},
+            [("GET", "apply.workable.com/api/v1/widget/accounts/x",
+              jresp(payload=payload))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["location"], "")
+        self.assertEqual(jobs[0]["posted"], "")
 
 
 if __name__ == "__main__":

@@ -72,6 +72,14 @@ class TestHostMatch(unittest.TestCase):
         self.assertEqual(res.confidence, "high")
         self.assertEqual(res.config["type"], "gem")
 
+    def test_workable_host_high_confidence(self):
+        html = '<html><title>Acme - Careers</title></html>'
+        res = run_probe("https://apply.workable.com/acme",
+                        [("apply.workable.com", page(html))])
+        self.assertEqual(res.type, "workable")
+        self.assertEqual(res.confidence, "high")
+        self.assertEqual(res.config["type"], "workable")
+
     def test_greenhouse_host_reads_slug_from_path(self):
         res = run_probe(
             "https://job-boards.greenhouse.io/acmeco",
@@ -196,12 +204,12 @@ class TestGuessedSlug(unittest.TestCase):
 
 class TestUnsupportedAndUnknown(unittest.TestCase):
     def test_recognized_unsupported(self):
-        html = '<script src="https://apply.workable.com/x.js"></script>'
+        html = '<script src="https://breezy.hr/widget.js"></script>'
         res = run_probe("https://careers.example-corp.com",
                         [("careers.example-corp.com", page(html))],
                         default=api({}, status=404))
         self.assertIsNone(res.type)
-        self.assertEqual(res.other, "Workable")
+        self.assertEqual(res.other, "Breezy HR")
 
     def test_no_signature_unknown(self):
         res = run_probe("https://careers.nondescript.com",
