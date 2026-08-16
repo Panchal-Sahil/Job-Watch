@@ -80,6 +80,21 @@ class TestHostMatch(unittest.TestCase):
         self.assertEqual(res.confidence, "high")
         self.assertEqual(res.config["type"], "workable")
 
+    def test_zohorecruit_host_high_confidence(self):
+        html = '<html><input id="jobs" value="[]"></html>'
+        res = run_probe("https://acme.zohorecruit.com/jobs/Careers",
+                        [("acme.zohorecruit.com", page(html))])
+        self.assertEqual(res.type, "zohorecruit")
+        self.assertEqual(res.confidence, "high")
+        self.assertEqual(res.config["type"], "zohorecruit")
+
+    def test_zohorecruit_ca_host(self):
+        html = '<html><input id="jobs" value="[]"></html>'
+        res = run_probe("https://acme.zohorecruit.ca/jobs/Careers",
+                        [("acme.zohorecruit.ca", page(html))])
+        self.assertEqual(res.type, "zohorecruit")
+        self.assertEqual(res.confidence, "high")
+
     def test_greenhouse_host_reads_slug_from_path(self):
         res = run_probe(
             "https://job-boards.greenhouse.io/acmeco",
