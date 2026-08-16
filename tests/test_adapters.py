@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from adapters import (ashby, avature, bamboohr, dayforce, eightfold, gem, greenhouse,
                       icims, jazzhr, jobvite, lever, oracle, phenom, radancy,
                       ripplematch, rippling, smartrecruiters, successfactors,
-                      ukg, workable, workday)
+                      ukg, workable, workday, zohorecruit)
 from tests import fakehttp
 from tests.fakehttp import FakeRequests, jresp
 
@@ -1291,6 +1291,86 @@ class TestWorkable(AdapterTestCase):
         self.assert_contract(jobs)
         self.assertEqual(jobs[0]["location"], "")
         self.assertEqual(jobs[0]["posted"], "")
+
+
+class TestZohoRecruit(AdapterTestCase):
+    def _page_html(self, jobs_json, meta_json=None):
+        import html as _html
+        jobs_esc = _html.escape(json.dumps(jobs_json), quote=True)
+        meta_esc = ""
+        if meta_json is not None:
+            meta_esc = '<input type="hidden" id="meta" value="' + _html.escape(json.dumps(meta_json), quote=True) + '">'
+        return (
+            '<html><body>'
+            '<input type="hidden" id="jobs" value="' + jobs_esc + '">'
+            + meta_esc +
+            '</body></html>'
+        )
+
+    def test_normalizes(self):
+        jobs_data = [
+            {"id": "123456", "Posting_Title": "  ML Intern  ",
+             "City": "Toronto", "State": "Ontario", "Country": "Canada",
+             "Date_Opened": "2026-07-01", "Remote_Job": False},
+            {"id": "789012", "Posting_Title": "Data Analyst",
+             "City": "Vancouver", "State": "BC", "Country": "Canada",
+             "Date_Opened": "2026-06-15", "Remote_Job": False},
+        ]
+        meta_data = {"org_info": {"company_name": "Acme Corp"}, "page_name": "Careers"}
+        html_text = self._page_html(jobs_data, meta_data)
+        jobs, _ = self.run_adapter(
+            zohorecruit, zohorecruit.fetch_zohorecruit,
+            {"url": "https://acme.zohorecruit.com/jobs/Careers"},
+            [("GET", "acme.zohorecruit.com/jobs/Careers", jresp(text=html_text))])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 2)
+        j = jobs[0]
+        self.assertEqual(j["id"], "zohorecruit:123456")
+        self.assertEqual(j["title"], "ML Intern")
+        self.assertEqual(j["location"], "Toronto, Ontario, Canada")
+        self.assertEqual(j["posted"], "2026-07-01")
+        self.assertIn("123456", j["url"])
+        self.assertEqual(j["company"], "Acme Corp")
+
+    def test_company_from_board_name(self):
+        jobs_data = [{"id": "1", "Posting_Title": "Dev", "City": "", "State": "", "Country": ""}]
+        html_text = self._page_html(jobs_data)
+        jobs, _ = self.run_adapter(
+            zohorecruit, zohorecruit.fetch_zohorecruit,
+            {"name": "My Company", "url": "https://x.zohorecruit.com/jobs/Careers"},
+            [("GET", "x.zohorecruit.com/jobs/Careers", jresp(text=html_text))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["company"], "My Company")
+
+    def test_empty_board(self):
+        html_text = self._page_html([])
+        jobs, _ = self.run_adapter(
+            zohorecruit, zohorecruit.fetch_zohorecruit,
+            {"name": "Empty", "url": "https://empty.zohorecruit.com/jobs/Careers"},
+            [("GET", "empty.zohorecruit.com/jobs/Careers", jresp(text=html_text))])
+        self.assertEqual(jobs, [])
+
+    def test_missing_fields(self):
+        jobs_data = [{"id": "99", "Job_Opening_Name": "Remote Role",
+                      "City": "", "State": "", "Country": ""}]
+        meta_data = {"org_info": {"company_name": "X"}}
+        html_text = self._page_html(jobs_data, meta_data)
+        jobs, _ = self.run_adapter(
+            zohorecruit, zohorecruit.fetch_zohorecruit,
+            {"url": "https://x.zohorecruit.ca/jobs/Careers"},
+            [("GET", "x.zohorecruit.ca/jobs/Careers", jresp(text=html_text))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["title"], "Remote Role")
+        self.assertEqual(jobs[0]["location"], "")
+        self.assertEqual(jobs[0]["posted"], "")
+
+    def test_no_jobs_input_returns_empty(self):
+        html_text = "<html><body>No jobs here</body></html>"
+        jobs, _ = self.run_adapter(
+            zohorecruit, zohorecruit.fetch_zohorecruit,
+            {"name": "X", "url": "https://x.zohorecruit.com/jobs/Careers"},
+            [("GET", "x.zohorecruit.com/jobs/Careers", jresp(text=html_text))])
+        self.assertEqual(jobs, [])
 
 
 if __name__ == "__main__":
