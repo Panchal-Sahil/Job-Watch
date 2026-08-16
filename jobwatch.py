@@ -40,6 +40,7 @@ from adapters import workday as workday_mod
 from adapters.workday import fetch_workday
 from adapters.gem import fetch_gem
 from adapters.workable import fetch_workable
+from adapters.zohorecruit import fetch_zohorecruit
 
 # How many boards to fetch at once. The threads are almost entirely idle waiting on
 # network, so this can run well above the core count; past ~32 the run is bound by the
@@ -170,6 +171,7 @@ ADAPTERS = {
     "avature": fetch_avature,
     "gem": fetch_gem,
     "workable": fetch_workable,
+    "zohorecruit": fetch_zohorecruit,
 }
 
 
