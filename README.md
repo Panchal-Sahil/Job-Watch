@@ -1,15 +1,14 @@
 # Job Watch
 
-Job aggregators rank results by algorithm, not by what you care about,
-and they're often hours or days behind the company's own career page. This
-tool skips the middleman: polls company career boards, applies filters you
-define, and shows you what's new since you last checked.
+Job aggregators rank by algorithm and often lag hours or days behind the
+company's own career page. This tool polls career boards directly, applies
+your filters, and shows what's new since you last checked.
 
 Tracks what you've seen, so each run shows only what's **new**.
 Terminal-only, no accounts, no database.
 This tool reads publicly available career board APIs for personal use.
 
-Supports 19 ATS platforms. Other types plug in as small adapters.
+Supports 23 ATS platforms. Other types plug in as small adapters.
 
 | ATS | URL looks like | config `type` |
 |-----|----------------|---------------|
@@ -32,6 +31,10 @@ Supports 19 ATS platforms. Other types plug in as small adapters.
 | JazzHR | `<tenant>.applytojob.com/apply` | `jazzhr` |
 | Jobvite | `jobs.jobvite.com/<slug>` | `jobvite` |
 | Avature | `<host>/en_US/careers/SearchJobs/?...` (page loads `avacdn.net`) | `avature` |
+| Gem | `jobs.gem.com/<slug>` | `gem` |
+| Workable | `apply.workable.com/<slug>` | `workable` |
+| Yello | `<sub>.yello.co/job_boards/<board_id>` | `yello` |
+| ZohoRecruit | `<org>.zohorecruit.com/jobs/<page>` | `zohorecruit` |
 
 - **Greenhouse/Lever/Ashby**: the slug comes from the last path segment. Override
   with `"token"`/`"company"`/`"board"`.
@@ -63,9 +66,9 @@ A board's own `"query"` takes precedence; leave it unset to use the default.
   board URL**; they apply server-side. No keyword search fallback.
 
 Phenom, SuccessFactors, Eightfold, the iCIMS careers-home SPA, JazzHR, Jobvite,
-and Avature scrape HTML or search by keyword rather than reading clean JSON APIs.
-A site redesign can break them, and not every company on those platforms exposes
-the standard endpoints.
+Avature, Yello, and ZohoRecruit scrape HTML or search by keyword.
+A site redesign can break them, and individual companies may not expose the
+standard endpoints.
 
 ## Setup
 
@@ -83,7 +86,7 @@ python3 jobwatch.py --board Akamai --raw     # skip filtering, show every job
 
 ## Identifying a board's ATS (`probe.py`)
 
-Not sure what platform a careers page runs on? Point `probe.py` at it:
+`probe.py` identifies which ATS a careers page runs on:
 
 ```bash
 python3 probe.py https://www.somecompany.com/careers
@@ -114,8 +117,8 @@ Detection works three ways, strongest first: the URL is an ATS domain; the page
 **white-labels** a Greenhouse/Lever/Ashby backend (probe extracts the real slug
 and confirms via the public API); or probe **guesses** the slug from the domain
 (low confidence, so verify the listed jobs belong to the right company). Probe
-also reports recognized-but-unsupported platforms like Workable/Brassring, or
-`unknown`. Either way you get a ready-to-paste `config.json` entry.
+also reports recognized-but-unsupported platforms (Brassring, Taleo, etc.) or
+`unknown`, and prints a ready-to-paste `config.json` entry.
 
 `--add` first **verifies the board works**: probe runs the same fetch jobwatch
 would, and adds it as long as that fetch **succeeds** (a reachable board with
@@ -134,7 +137,7 @@ Open the company's careers page. If the URL looks like
   "url": "https://shopify.wd3.myworkdayjobs.com/en-CA/external" }
 ```
 
-The JSON API endpoint is derived from the URL. If a board returns nothing,
+The adapter derives the API endpoint from the URL. If a board returns nothing,
 pass the site slug with `"site": "..."`.
 
 ## Filters
