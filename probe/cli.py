@@ -94,10 +94,13 @@ def main():
         except Exception as e:  # never let one bad URL sink the batch
             print(f"\n  URL:      {url}\n  ERROR: {e}")
             status = f"ERROR: {e}"
-        summary.append((url, status))
+        summary.append((name or args.name, url, status))
 
     if len(entries) > 1:
         print("\n" + "=" * 70 + "\n  Summary:\n")
-        for url, status in summary:
-            print(f"  {status:42}  {url}")
+        for sname, url, status in summary:
+            if sname:
+                print(f"  {sname:20}  {status:42}  {url}")
+            else:
+                print(f"  {status:42}  {url}")
     print()
