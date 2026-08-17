@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from adapters import (ashby, avature, bamboohr, dayforce, eightfold, gem, greenhouse,
                       icims, jazzhr, jobvite, lever, oracle, phenom, radancy,
                       ripplematch, rippling, smartrecruiters, successfactors,
-                      ukg, workable, workday, zohorecruit)
+                      ukg, workable, workday, yello, zohorecruit)
 from tests import fakehttp
 from tests.fakehttp import FakeRequests, jresp
 
@@ -1371,6 +1371,90 @@ class TestZohoRecruit(AdapterTestCase):
             {"name": "X", "url": "https://x.zohorecruit.com/jobs/Careers"},
             [("GET", "x.zohorecruit.com/jobs/Careers", jresp(text=html_text))])
         self.assertEqual(jobs, [])
+
+
+class TestYello(AdapterTestCase):
+    def _search_html(self, jobs):
+        items = []
+        for slug, title, req_id, posted in jobs:
+            items.append(
+                f'<li class="search-results__item"><div class="clearfix">'
+                f'<div class="search-results__jobinfo pull-left">'
+                f'<a class="search-results__req_title" lang="en" '
+                f'href="/jobs/{slug}?job_board_id=BOARD1">{title}</a>'
+                f'<div><span>{req_id}</span></div></div>'
+                f'<div class="search-results__post-time pull-right">{posted}</div>'
+                f'</div></li>'
+            )
+        return "".join(items)
+
+    def _search_resp(self, jobs, more=False):
+        return jresp(payload={
+            "html": self._search_html(jobs),
+            "count_on_page": len(jobs),
+            "more_requisitions": more,
+            "display_count_text": f"{len(jobs)} Results",
+        })
+
+    def test_normalizes(self):
+        jobs_data = [
+            ("abc123", "Software Engineer", "100", "2d"),
+            ("def456", "Data &amp; ML Intern", "200", "5d"),
+        ]
+        jobs, _ = self.run_adapter(
+            yello, yello.fetch_yello,
+            {"name": "Acme", "url": "https://acme.yello.co/job_boards/BOARD1"},
+            [("GET", "acme.yello.co/job_boards/BOARD1/search",
+              self._search_resp(jobs_data))])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 2)
+        j = jobs[0]
+        self.assertEqual(j["id"], "yello:BOARD1:100")
+        self.assertEqual(j["title"], "Software Engineer")
+        self.assertEqual(j["posted"], "2d")
+        self.assertEqual(j["url"],
+                         "https://acme.yello.co/jobs/abc123?job_board_id=BOARD1")
+        self.assertEqual(j["company"], "Acme")
+        self.assertEqual(jobs[1]["title"], "Data & ML Intern")
+
+    def test_pagination_stops(self):
+        page1 = [("slug1", "Job A", "10", "1d")]
+        page2 = [("slug2", "Job B", "20", "3d")]
+
+        def route(url, **kw):
+            pn = kw.get("params", {}).get("page_number", 1)
+            if pn == 1:
+                return self._search_resp(page1, more=True)
+            return self._search_resp(page2, more=False)
+
+        jobs, fake = self.run_adapter(
+            yello, yello.fetch_yello,
+            {"name": "X", "url": "https://x.yello.co/job_boards/B1"},
+            [("GET", "x.yello.co/job_boards/B1/search", route)])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 2)
+        self.assertEqual(jobs[0]["id"], "yello:B1:10")
+        self.assertEqual(jobs[1]["id"], "yello:B1:20")
+
+    def test_empty_board(self):
+        jobs, _ = self.run_adapter(
+            yello, yello.fetch_yello,
+            {"name": "Empty", "url": "https://empty.yello.co/job_boards/EMPTY"},
+            [("GET", "empty.yello.co/job_boards/EMPTY/search",
+              jresp(payload={"html": "", "count_on_page": 0,
+                             "more_requisitions": False,
+                             "display_count_text": "0 Results"}))])
+        self.assertEqual(jobs, [])
+
+    def test_company_falls_back_to_board_id(self):
+        jobs_data = [("s1", "Dev", "1", "1d")]
+        jobs, _ = self.run_adapter(
+            yello, yello.fetch_yello,
+            {"url": "https://co.yello.co/job_boards/MYBOARD"},
+            [("GET", "co.yello.co/job_boards/MYBOARD/search",
+              self._search_resp(jobs_data))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["company"], "MYBOARD")
 
 
 if __name__ == "__main__":

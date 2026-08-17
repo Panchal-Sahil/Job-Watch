@@ -11,7 +11,7 @@ SUPPORTED_TYPES = {
     "workday", "greenhouse", "lever", "ashby", "phenom", "successfactors",
     "oracle", "radancy", "smartrecruiters", "bamboohr", "rippling", "ripplematch",
     "ukg", "dayforce", "icims", "eightfold", "jazzhr", "jobvite", "avature", "gem",
-    "workable", "zohorecruit",
+    "workable", "yello", "zohorecruit",
 }
 
 # (type, host-regex). Matched against the final (post-redirect) URL's host and
@@ -35,6 +35,7 @@ HOST_RULES = [
     ("successfactors", r"\.sapsf\.com$|\.successfactors\.com$"),
     ("gem", r"(^|\.)jobs\.gem\.com$"),
     ("workable", r"(^|\.)apply\.workable\.com$"),
+    ("yello", r"(^|\.)yello\.co$"),
     ("zohorecruit", r"\.zohorecruit\.(com|ca|eu|in|com\.au|jp)$"),
 ]
 
@@ -72,6 +73,7 @@ HTML_SIGNATURES = [
     ("workday", r"\.myworkdayjobs\.com|\.myworkdaysite\.com", None),
     ("gem", r"jobs\.gem\.com", None),
     ("workable", r"apply\.workable\.com", None),
+    ("yello", r"yello\.co|recsolu\.com", None),
     ("zohorecruit", r"\.zohorecruit\.(com|ca|eu|in|com\.au|jp)", None),
 ]
 
@@ -79,7 +81,6 @@ HTML_SIGNATURES = [
 OTHER_ATS = [
     ("IBM/Infinite Brassring (Kenexa)", r"brassring\.com|kenexa"),
     ("Cornerstone OnDemand", r"\.csod\.com|cornerstoneondemand"),
-    ("Yello", r"yello\.co"),
     ("Beamery", r"beamery\.com|beamery"),
     ("Recruitee", r"\.recruitee\.com"),
     ("Breezy HR", r"breezy\.hr"),

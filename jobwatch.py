@@ -40,6 +40,7 @@ from adapters import workday as workday_mod
 from adapters.workday import fetch_workday
 from adapters.gem import fetch_gem
 from adapters.workable import fetch_workable
+from adapters.yello import fetch_yello
 from adapters.zohorecruit import fetch_zohorecruit
 
 # How many boards to fetch at once. The threads are almost entirely idle waiting on
@@ -171,6 +172,7 @@ ADAPTERS = {
     "avature": fetch_avature,
     "gem": fetch_gem,
     "workable": fetch_workable,
+    "yello": fetch_yello,
     "zohorecruit": fetch_zohorecruit,
 }
 

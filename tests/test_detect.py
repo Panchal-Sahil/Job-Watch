@@ -95,6 +95,12 @@ class TestHostMatch(unittest.TestCase):
         self.assertEqual(res.type, "zohorecruit")
         self.assertEqual(res.confidence, "high")
 
+    def test_yello_host_high_confidence(self):
+        res = run_probe("https://eyglobal.yello.co/job_boards/c1riT--B2O",
+                        [("eyglobal.yello.co", page("<html>jobs</html>"))])
+        self.assertEqual(res.type, "yello")
+        self.assertEqual(res.confidence, "high")
+
     def test_greenhouse_host_reads_slug_from_path(self):
         res = run_probe(
             "https://job-boards.greenhouse.io/acmeco",
