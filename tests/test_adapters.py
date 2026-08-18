@@ -879,6 +879,24 @@ class TestPhenom(AdapterTestCase):
         self.assertEqual(jobs[0]["title"], "Software & Data Intern")  # html-unescaped
         self.assertEqual(len([c for c in fake.calls if c[0] == "POST"]), 2)
 
+    def test_subsite_prefix_widgets_endpoint(self):
+        """A URL with a sub-site prefix (e.g. /campus/) should hit the
+        prefixed widgets endpoint, not the root one from phApp config."""
+        landing = ('<html><head><script>var phApp = {"widgetApiEndpoint": '
+                   '"https://careers.acme.com/widgets", "baseUrl": '
+                   '"https://careers.acme.com/ca/en/", "locale": "en_ca", '
+                   '"country": "ca", "pageId": "page25"};</script></head></html>')
+        data = {"refineSearch": {"totalHits": 1, "data": {"jobs": [self._job(0)]}}}
+        jobs, fake = self.run_adapter(
+            phenom, phenom.fetch_phenom,
+            {"url": "https://careers.acme.com/campus/ca/en/search-results"},
+            [("GET", "careers.acme.com/campus/ca/en/search-results", jresp(text=landing)),
+             ("POST", "careers.acme.com/campus/widgets", jresp(payload=data))])
+        self.assert_contract(jobs)
+        self.assertEqual(len(jobs), 1)
+        posts = [c for c in fake.calls if c[0] == "POST"]
+        self.assertIn("/campus/widgets", posts[0][1])
+
 
 class TestEightfold(AdapterTestCase):
     """PCSX site: pulls _csrf token + API domain from the landing HTML, then pages
