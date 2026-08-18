@@ -40,6 +40,19 @@ def fetch_phenom(board):
     country = cfg.get("country", "global")
     page_id = cfg.get("pageId", "page1")
 
+    # Sub-site prefix: some Phenom sites serve different job pools under
+    # a path prefix (e.g. /campus/).  phApp.widgetApiEndpoint always
+    # points to the root /widgets, so derive the prefix from the URL vs
+    # the baseUrl that phApp reports.
+    base_url = cfg.get("baseUrl", "")
+    if base_url:
+        url_path = urlparse(url).path
+        base_path = urlparse(base_url).path
+        idx = url_path.find(base_path)
+        if idx > 0:
+            ep = urlparse(endpoint)
+            endpoint = ep._replace(path=url_path[:idx] + ep.path).geturl()
+
     # Search terms come from the board's `query` (else config's `query_terms`,
     # injected by jobwatch); an empty term searches everything.
     terms = board.get("query") or [""]
