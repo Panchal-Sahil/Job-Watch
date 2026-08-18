@@ -897,6 +897,32 @@ class TestPhenom(AdapterTestCase):
         posts = [c for c in fake.calls if c[0] == "POST"]
         self.assertIn("/campus/widgets", posts[0][1])
 
+    def test_workday_backend_uses_workday_id(self):
+        """When applyUrl points to Workday, the ID should use the Workday
+        tenant:reqId format so seen.json dedup works across adapters."""
+        wd_job = {"jobId": "R-12345", "title": "Intern",
+                  "cityStateCountry": "Toronto",
+                  "postedDate": "2026-01-15",
+                  "applyUrl": "https://acme.wd5.myworkdayjobs.com/site/job/Loc/Title_R-12345/apply"}
+        data = {"refineSearch": {"totalHits": 1, "data": {"jobs": [wd_job]}}}
+        jobs, _ = self.run_adapter(
+            phenom, phenom.fetch_phenom,
+            {"url": "https://careers.acme.com/careers"},
+            [("GET", "careers.acme.com/careers", jresp(text=self.LANDING)),
+             ("POST", "careers.acme.com/api/widgets", jresp(payload=data))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["id"], "acme:R-12345")
+
+    def test_native_phenom_keeps_phenom_id(self):
+        """Non-Workday applyUrls keep the phenom: prefix."""
+        data = {"refineSearch": {"totalHits": 1, "data": {"jobs": [self._job(0)]}}}
+        jobs, _ = self.run_adapter(
+            phenom, phenom.fetch_phenom,
+            {"url": "https://careers.acme.com/careers"},
+            [("GET", "careers.acme.com/careers", jresp(text=self.LANDING)),
+             ("POST", "careers.acme.com/api/widgets", jresp(payload=data))])
+        self.assertEqual(jobs[0]["id"], "phenom:careers.acme.com:J0")
+
 
 class TestEightfold(AdapterTestCase):
     """PCSX site: pulls _csrf token + API domain from the landing HTML, then pages
