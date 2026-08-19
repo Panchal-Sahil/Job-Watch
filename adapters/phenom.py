@@ -40,6 +40,19 @@ def fetch_phenom(board):
     country = cfg.get("country", "global")
     page_id = cfg.get("pageId", "page1")
 
+    # Sub-site prefix: some Phenom sites serve different job pools under
+    # a path prefix (e.g. /campus/).  phApp.widgetApiEndpoint always
+    # points to the root /widgets, so derive the prefix from the URL vs
+    # the baseUrl that phApp reports.
+    base_url = cfg.get("baseUrl", "")
+    if base_url:
+        url_path = urlparse(url).path
+        base_path = urlparse(base_url).path
+        idx = url_path.find(base_path)
+        if idx > 0:
+            ep = urlparse(endpoint)
+            endpoint = ep._replace(path=url_path[:idx] + ep.path).geturl()
+
     # Search terms come from the board's `query` (else config's `query_terms`,
     # injected by jobwatch); an empty term searches everything.
     terms = board.get("query") or [""]
@@ -68,13 +81,25 @@ def fetch_phenom(board):
             postings = data.get("jobs", [])
             for p in postings:
                 jid = p.get("jobId") or p.get("jobSeqNo")
+                apply = p.get("applyUrl", url)
+                # Many Phenom sites are facades over Workday: the applyUrl
+                # points to myworkdayjobs.com and the jobId IS the Workday
+                # requisition ID. Use the Workday ID format so seen.json
+                # dedup catches overlap with any Workday board for the same
+                # company.
+                ap = urlparse(apply)
+                if "myworkdayjobs.com" in ap.netloc:
+                    tenant = ap.netloc.split(".")[0]
+                    job_id = f"{tenant}:{jid}"
+                else:
+                    job_id = f"phenom:{host}:{jid}"
                 by_id[jid] = {
-                    "id": f"phenom:{host}:{jid}",
+                    "id": job_id,
                     "title": html.unescape(p.get("title") or "").strip(),
                     "location": (p.get("cityStateCountry") or p.get("cityState")
                                  or p.get("location") or "").strip(),
                     "posted": (p.get("postedDate") or p.get("dateCreated") or "")[:10],
-                    "url": p.get("applyUrl", url),
+                    "url": apply,
                     "company": company,
                 }
             frm += 100
