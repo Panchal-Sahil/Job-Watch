@@ -93,6 +93,8 @@ def fetch_phenom(board):
                     job_id = f"{tenant}:{jid}"
                 else:
                     job_id = f"phenom:{host}:{jid}"
+                if apply.endswith("/apply"):
+                    apply = apply[:-6]
                 by_id[jid] = {
                     "id": job_id,
                     "title": html.unescape(p.get("title") or "").strip(),
