@@ -246,7 +246,7 @@ def fetch_workday(board):
                     "title": title,
                     "location": location,
                     "posted": p.get("postedOn", "").strip(),
-                    "url": f"https://{host}/{site}{ext}" if ext else url,
+                    "url": f"https://{host}/{site}{ext.removesuffix('/apply')}" if ext else url,
                     "company": name or tenant,
                 }
             )

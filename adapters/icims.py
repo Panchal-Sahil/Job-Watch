@@ -68,7 +68,7 @@ def _parse_cards(page_html, namespace, company):
         if not href:
             continue
         jid = href.group(2)
-        url = href.group(1).split("?")[0]
+        url = href.group(1).split("?")[0].removesuffix("/login")
         title = _TITLE.search(card)
         loc = _LOC.search(card)
         posted = _POSTED.search(card)
@@ -115,12 +115,13 @@ def _fetch_careers_home(board):
             for row in rows:
                 jd = row.get("data", {})
                 jid = jd.get("req_id") or jd.get("slug")
+                job_url = f"https://{host}/jobs/{jid}"
                 by_id[jid] = {
                     "id": f"icims:{namespace}:{jid}",
                     "title": (jd.get("title") or "").strip(),
                     "location": (jd.get("full_location") or jd.get("location_name") or "").strip(),
                     "posted": (jd.get("posted_date") or "")[:10],
-                    "url": jd.get("apply_url") or board["url"],
+                    "url": job_url,
                     "company": company,
                 }
             total = data.get("totalCount") or 0

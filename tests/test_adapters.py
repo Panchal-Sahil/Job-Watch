@@ -703,6 +703,20 @@ class TestWorkday(AdapterTestCase):
                 [("POST", "/wday/cxs/acme-emea/Careers/jobs", jresp(status=422)),
                  ("POST", "/wday/cxs/acme_emea/Careers/jobs", jresp(payload=payload))])
 
+    def test_apply_suffix_stripped_from_url(self):
+        """Workday externalPath often ends with /apply — the output URL should not."""
+        job = {"title": "Intern", "externalPath": "/job/Toronto/Title_R-1/apply",
+               "bulletFields": ["R-1"], "locationsText": "Toronto",
+               "postedOn": "Posted Today"}
+        payload = {"total": 1, "jobPostings": [job]}
+        jobs, _ = self.run_adapter(
+            workday, workday.fetch_workday,
+            {"url": "https://acme.wd5.myworkdayjobs.com/en-US/Careers"},
+            [("POST", "/wday/cxs/acme/Careers/jobs", jresp(payload=payload))])
+        self.assertFalse(jobs[0]["url"].endswith("/apply"))
+        self.assertEqual(jobs[0]["url"],
+                         "https://acme.wd5.myworkdayjobs.com/Careers/job/Toronto/Title_R-1")
+
     def test_missing_site_raises(self):
         with self.assertRaises(ValueError):
             self.run_adapter(
@@ -763,6 +777,19 @@ class TestICIMSCareersHome(AdapterTestCase):
         self.assertEqual(len(jobs), 15)
         self.assertEqual(jobs[0]["id"], "icims:careers.acme.com:R0")
         self.assertEqual(len([c for c in fake.calls if c[0] == "GET"]), 2)
+
+    def test_url_uses_vanity_host_not_apply_url(self):
+        """apply_url often points to an icims.com backend with a /login suffix;
+        the output URL must use the board's vanity host instead."""
+        row = {"data": {"req_id": "R1", "title": "Analyst", "full_location": "Toronto",
+                        "posted_date": "2026-02-01",
+                        "apply_url": "https://exphire-acme.icims.com/jobs/R1/login"}}
+        jobs, _ = self.run_adapter(
+            icims, icims.fetch_icims,
+            {"url": "https://careers.acme.com/"},
+            [("GET", "careers.acme.com/api/jobs",
+              jresp(payload={"totalCount": 1, "jobs": [row]}))])
+        self.assertEqual(jobs[0]["url"], "https://careers.acme.com/jobs/R1")
 
 
 class TestSuccessFactorsModern(AdapterTestCase):
@@ -913,6 +940,22 @@ class TestPhenom(AdapterTestCase):
         self.assert_contract(jobs)
         self.assertEqual(jobs[0]["id"], "acme:R-12345")
 
+    def test_workday_apply_suffix_stripped(self):
+        """Workday-backed applyUrls ending in /apply should have the suffix removed."""
+        wd_job = {"jobId": "R-99", "title": "Intern",
+                  "cityStateCountry": "Toronto",
+                  "postedDate": "2026-01-15",
+                  "applyUrl": "https://acme.wd5.myworkdayjobs.com/site/job/Loc/Title_R-99/apply"}
+        data = {"refineSearch": {"totalHits": 1, "data": {"jobs": [wd_job]}}}
+        jobs, _ = self.run_adapter(
+            phenom, phenom.fetch_phenom,
+            {"url": "https://careers.acme.com/careers"},
+            [("GET", "careers.acme.com/careers", jresp(text=self.LANDING)),
+             ("POST", "careers.acme.com/api/widgets", jresp(payload=data))])
+        self.assertFalse(jobs[0]["url"].endswith("/apply"))
+        self.assertEqual(jobs[0]["url"],
+                         "https://acme.wd5.myworkdayjobs.com/site/job/Loc/Title_R-99")
+
     def test_native_phenom_keeps_phenom_id(self):
         """Non-Workday applyUrls keep the phenom: prefix."""
         data = {"refineSearch": {"totalHits": 1, "data": {"jobs": [self._job(0)]}}}
@@ -1040,6 +1083,23 @@ class TestICIMSClassic(AdapterTestCase):
         self.assertEqual(jobs[0]["posted"], "2026-06-25")
         self.assertEqual(jobs[0]["url"], "https://careersen-acme.icims.com/jobs/12345/software-intern/job")
         self.assertEqual(len([c for c in fake.calls if c[0] == "GET"]), 2)
+
+    def test_login_suffix_stripped(self):
+        """iCIMS card hrefs ending in /login should have the suffix removed."""
+        card = (
+            '<li class="iCIMS_JobCardItem">'
+            '<a href="https://students-acme.icims.com/jobs/33306/login">'
+            '<h3>Analyst Intern</h3></a>'
+            '<span class="field-label">Job Locations</span> <span >Toronto</span>'
+            '<span>Posted Date</span> <span title="8/10/2026 1:00 PM">today</span>'
+            '</li>')
+        jobs, _ = self.run_adapter(
+            icims, icims.fetch_icims,
+            {"url": "https://students-acme.icims.com/jobs/search"},
+            [("GET", "students-acme.icims.com/jobs/search",
+              jresp(text=card))])
+        self.assertFalse(jobs[0]["url"].endswith("/login"))
+        self.assertEqual(jobs[0]["url"], "https://students-acme.icims.com/jobs/33306")
 
 
 class TestSuccessFactorsClassic(AdapterTestCase):
