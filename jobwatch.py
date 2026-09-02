@@ -15,6 +15,7 @@ import json
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
 
 from adapters import common
@@ -53,6 +54,7 @@ MAX_WORKERS = 32
 HERE = Path(__file__).resolve().parent
 CONFIG_PATH = HERE / "config.json"
 SEEN_PATH = HERE / "seen.json"
+OUTPUT_DIR = HERE / "output" / "jobwatch"
 
 
 # --------------------------------------------------------------------------- #
@@ -327,7 +329,7 @@ def main():
     failed = []
     for name, jobs, error in results:
         if error:
-            failed.append(name)
+            failed.append((name, error))
             print(f"  ! {name}: {error}", file=sys.stderr)
             continue
         for job in jobs:
@@ -341,16 +343,45 @@ def main():
     # list, and the detail went to stderr, so a redirected run had no one place
     # that answered "did more boards than usual fail this time?".
     if failed:
-        print(f"\n  {len(failed)} board(s) failed: {', '.join(sorted(failed))}")
+        print(f"\n  {len(failed)} board(s) failed: {', '.join(sorted(n for n, _ in failed))}")
+
+    # Write results to both terminal and a timestamped log file.
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out_path = OUTPUT_DIR / f"jobwatch-{stamp}.out"
+
+    lines = []
+
+    flag_parts = []
+    if args.board:
+        flag_parts.append(f"--board {args.board}")
+    if args.type:
+        flag_parts.append(f"--type {args.type}")
+    if args.raw:
+        flag_parts.append("--raw")
+    lines.append(f"Run: {stamp}  |  Boards: {total}  |  Flags: {', '.join(flag_parts) or 'none'}")
+    if failed:
+        lines.append(f"\n{len(failed)} board(s) failed:")
+        for name, error in sorted(failed):
+            lines.append(f"  ! {name}: {error}")
+    lines.append("")
 
     if new_jobs:
         print(f"\n  {len(new_jobs)} new matching job(s):\n")
+        lines.append(f"{len(new_jobs)} new matching job(s):\n")
         for job in sorted(new_jobs, key=lambda j: (j["company"], j["title"])):
             print(f"  • {job['title']}")
             print(f"      {job['company']} — {job['location']}  ({job['posted']})")
             print(f"      {job['url']}\n")
+            lines.append(f"• {job['title']}")
+            lines.append(f"    {job['company']} — {job['location']}  ({job['posted']})")
+            lines.append(f"    {job['url']}\n")
     else:
         print("  No new matching jobs.")
+        lines.append("No new matching jobs.")
+
+    out_path.write_text("\n".join(lines) + "\n")
+    print(f"  Saved to {out_path.relative_to(HERE)}")
 
     SEEN_PATH.write_text(json.dumps(sorted(seen), indent=0))
 
