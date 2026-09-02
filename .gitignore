@@ -10,6 +10,7 @@ seen.json
 
 # Captured run output / logs
 *.out
+output/
 baseline.timing
 
 # probe.py scratch input list
