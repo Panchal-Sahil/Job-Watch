@@ -7,11 +7,15 @@ bad URL never sinks the batch.
 
 import argparse
 import sys
+from datetime import datetime
+from pathlib import Path
 
 from probe.config_io import CONFIG_PATH, _append_to_config, _format_entry, _verify
 from probe.detect import probe
 from probe.input_parse import _collect_entries
 from probe.signatures import SUPPORTED_TYPES
+
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output" / "probe"
 
 
 def _handle_one(url, name, do_add):
@@ -104,3 +108,28 @@ def main():
             else:
                 print(f"  {status:42}  {url}")
     print()
+
+    # Write results to a timestamped log file.
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out_path = OUTPUT_DIR / f"probe-{stamp}.out"
+
+    lines = []
+    flag_parts = []
+    if args.file:
+        flag_parts.append(f"--file {args.file}")
+    if args.name:
+        flag_parts.append(f"--name {args.name}")
+    if args.add:
+        flag_parts.append("--add")
+    lines.append(f"Run: {stamp}  |  URLs: {len(entries)}  |  Flags: {', '.join(flag_parts) or 'none'}")
+    lines.append("")
+
+    for sname, url, status in summary:
+        if sname:
+            lines.append(f"{sname}  |  {url}  |  {status}")
+        else:
+            lines.append(f"{url}  |  {status}")
+
+    out_path.write_text("\n".join(lines) + "\n")
+    print(f"  Saved to {out_path.relative_to(OUTPUT_DIR.parent.parent)}")
