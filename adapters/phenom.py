@@ -8,7 +8,7 @@ from adapters.common import BROWSER_UA, HTTP, polite_sleep, TIMEOUT
 
 
 def _extract_js_object(text, marker):
-    """Pull the first balanced {...} JSON object appearing after `marker`."""
+    """Pull the first balanced {...} JSON object after `marker`."""
     i = text.find(marker)
     if i < 0:
         return None
@@ -25,8 +25,6 @@ def _extract_js_object(text, marker):
 
 
 def fetch_phenom(board):
-    """Phenom People career site. Reads the site's `phApp` config off the landing
-    page, then queries its /widgets endpoint with early-careers keywords."""
     url = board["url"]
     host = urlparse(url).netloc
     company = board.get("name", host)
@@ -40,10 +38,8 @@ def fetch_phenom(board):
     country = cfg.get("country", "global")
     page_id = cfg.get("pageId", "page1")
 
-    # Sub-site prefix: some Phenom sites serve different job pools under
-    # a path prefix (e.g. /campus/).  phApp.widgetApiEndpoint always
-    # points to the root /widgets, so derive the prefix from the URL vs
-    # the baseUrl that phApp reports.
+    # Some sites serve different job pools under a path prefix (e.g. /campus/).
+    # phApp.widgetApiEndpoint always points to root /widgets.
     base_url = cfg.get("baseUrl", "")
     if base_url:
         url_path = urlparse(url).path
@@ -53,8 +49,6 @@ def fetch_phenom(board):
             ep = urlparse(endpoint)
             endpoint = ep._replace(path=url_path[:idx] + ep.path).geturl()
 
-    # Search terms come from the board's `query` (else config's `query_terms`,
-    # injected by jobwatch); an empty term searches everything.
     terms = board.get("query") or [""]
     if isinstance(terms, str):
         terms = [terms]
@@ -82,11 +76,7 @@ def fetch_phenom(board):
             for p in postings:
                 jid = p.get("jobId") or p.get("jobSeqNo")
                 apply = p.get("applyUrl", url)
-                # Many Phenom sites are facades over Workday: the applyUrl
-                # points to myworkdayjobs.com and the jobId IS the Workday
-                # requisition ID. Use the Workday ID format so seen.json
-                # dedup catches overlap with any Workday board for the same
-                # company.
+                # Phenom sites fronting Workday: use Workday ID format for cross-adapter dedup.
                 ap = urlparse(apply)
                 if "myworkdayjobs.com" in ap.netloc:
                     tenant = ap.netloc.split(".")[0]
