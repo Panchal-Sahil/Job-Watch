@@ -8,9 +8,7 @@ from adapters.common import BROWSER_UA, HTTP, polite_sleep, TIMEOUT
 
 
 def fetch_radancy(board):
-    """Radancy / TalentBrew career site (the `/search-jobs?orgIds=...` platform).
-    Jobs are server-rendered into the main search page; we preserve the board URL's
-    own query string (orgIds + location filter) and paginate with `?p=N`."""
+    """Radancy / TalentBrew. Server-rendered HTML, paginated with `?p=N`."""
     parsed = urlparse(board["url"])
     host = parsed.netloc
     company = board.get("name", host)
@@ -18,16 +16,11 @@ def fetch_radancy(board):
     query = parsed.query
     ua = {"User-Agent": BROWSER_UA}
 
-    # Three Radancy templates exist: (A) data-title attr + location span inside the
-    # <a>; (B) title is the link text, location is a sibling span after it; (C) a
-    # heading (`*job-title*`) + a `*result-location*` span inside the <a>. Match the
-    # job <a> tag, then pull the title from data-title -> a `*title*` heading in the
-    # body -> the stripped body, and the location from any `*location*` span in the
-    # body OR the text just after (class names vary: job-location / result-location).
+    # Three template variants: title from data-title / heading / link text;
+    # location from a *location* span inside the <a> or in the block after it.
     anchor_re = re.compile(r'<a\s+([^>]*\bdata-job-id="[^"]+"[^>]*)>(.*?)</a>', re.S)
     title_re = re.compile(r'class="[^"]*title[^"]*"[^>]*>(.*?)</', re.S)
-    # Close on any tag, not just </span>: the location element is a <span> in some
-    # templates and an <li> in others (Capital One). Inner tags are stripped below.
+    # Close on any tag: location is <span> in some templates, <li> in others.
     loc_re = re.compile(r'class="[^"]*location[^"]*"[^>]*>(.*?)</', re.S)
 
     def attr(tag, name):
@@ -53,11 +46,8 @@ def fetch_radancy(board):
             title = (attr(tag, "data-title")
                      or (tm.group(1) if tm else "")
                      or re.sub(r"<[^>]+>", "", body))
-            # Location: inside the <a> body (templates A/C), else in the block
-            # rendered after </a> (templates B/D) — bounded by the next anchor so a
-            # job with no location can't borrow the following job's. For the last
-            # anchor there's no next one to bound against; cap the window so a
-            # location-less last job can't reach a footer "jobs by location" widget.
+            # Location from <a> body or block after it; bounded by next anchor
+            # (or 2000 chars) so a missing location can't bleed from a neighbor.
             nxt = (matches[i + 1].start() if i + 1 < len(matches)
                    else min(len(text), m.end() + 2000))
             ml = loc_re.search(body) or loc_re.search(text[m.end():nxt])
