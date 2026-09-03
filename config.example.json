@@ -8,6 +8,8 @@
   ],
   "resolve_multi_location": true,
   "workday_pod_limit": 6,
+  "max_workers": 32,
+  "request_delay_scale": 0.2,
   "filters": {
     "title_groups": [
       [

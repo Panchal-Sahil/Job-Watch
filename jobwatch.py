@@ -35,9 +35,6 @@ from adapters.workable import fetch_workable
 from adapters.yello import fetch_yello
 from adapters.zohorecruit import fetch_zohorecruit
 
-# I/O-bound threads; past ~32 the run is bound by the slowest board.
-MAX_WORKERS = 32
-
 HERE = Path(__file__).resolve().parent
 CONFIG_PATH = HERE / "config.json"
 SEEN_PATH = HERE / "seen.json"
@@ -224,9 +221,9 @@ def main():
     config = load_json(CONFIG_PATH, {})
     filters = config.get("filters", {})
     boards = config.get("boards", [])
-    workers = config.get("max_workers", MAX_WORKERS)
-    common.DELAY_SCALE = config.get("request_delay_scale", common.DELAY_SCALE)
-    workday_mod.POD_LIMIT = config.get("workday_pod_limit", workday_mod.POD_LIMIT)
+    workers = config["max_workers"]
+    common.DELAY_SCALE = config["request_delay_scale"]
+    workday_mod.POD_LIMIT = config["workday_pod_limit"]
     seen = set(load_json(SEEN_PATH, []))
 
     if args.board:
