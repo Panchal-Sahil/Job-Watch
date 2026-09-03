@@ -1,12 +1,12 @@
 # Job Watch
 
-Job aggregators rank by algorithm and often lag hours or days behind the
-company's own career page. This tool polls career boards directly, applies
-your filters, and shows what's new since you last checked.
+Job aggregators rank by algorithm and lag hours behind the company's
+own career page. jobwatch polls career boards, applies your filters, and
+prints what's **new** since your last run. It tracks what you've seen,
+so repeat runs show only fresh postings.
 
-Tracks what you've seen, so each run shows only what's **new**.
-Terminal-only, no accounts, no database.
-This tool reads publicly available career board APIs for personal use.
+Terminal-only, no accounts, no database. Reads public career board APIs
+for personal use.
 
 Supports 23 ATS platforms. Other types plug in as small adapters.
 
@@ -66,9 +66,8 @@ A board's own `"query"` takes precedence; leave it unset to use the default.
   board URL**; they apply server-side. No keyword search fallback.
 
 Phenom, SuccessFactors, Eightfold, the iCIMS careers-home SPA, JazzHR, Jobvite,
-Avature, Yello, and ZohoRecruit scrape HTML or search by keyword.
-A site redesign can break them, and individual companies may not expose the
-standard endpoints.
+Avature, Yello, and ZohoRecruit scrape HTML or search by keyword. A site
+redesign can break them, and some companies don't expose the standard endpoints.
 
 ## Setup
 
@@ -110,22 +109,22 @@ name still work.
 With several URLs, probe processes each and prints a summary; `--add` adds every
 one that verifies. `--name` applies to a single URL only. `--file` pulls every
 http(s) URL out of the file, so a **Markdown** list works as-is: `- [Name](url)`
-links, bullets, tables, or prose. Markdown headings (`#`) and `<!-- ... -->`
-comments are ignored, and duplicate URLs are de-duped.
+links, bullets, tables, or prose. Probe skips Markdown headings (`#`),
+`<!-- ... -->` comments, and duplicate URLs.
 
-Detection works three ways, strongest first: the URL is an ATS domain; the page
-**white-labels** a Greenhouse/Lever/Ashby backend (probe extracts the real slug
-and confirms via the public API); or probe **guesses** the slug from the domain
-(low confidence, so verify the listed jobs belong to the right company). Probe
-also reports recognized-but-unsupported platforms (Brassring, Taleo, etc.) or
-`unknown`, and prints a ready-to-paste `config.json` entry.
+Probe tries three strategies, strongest first: the URL is an ATS domain; the
+page **white-labels** a Greenhouse/Lever/Ashby backend (probe extracts the real
+slug and confirms via the public API); or probe **guesses** the slug from the
+domain (low confidence, so check that the listed jobs belong to the right
+company). Probe also reports recognized-but-unsupported platforms (Brassring,
+Taleo, etc.) or `unknown`, and prints a ready-to-paste `config.json` entry.
 
 `--add` first **verifies the board works**: probe runs the same fetch jobwatch
-would, and adds it as long as that fetch **succeeds** (a reachable board with
-zero current postings still gets added, with a note). A board that errors is
-refused, since it would fail every run. Entries land in `config.json` **in their
-ATS group** (one contiguous block per type, in canonical adapter order), matching
-the file's style. Probe never adds a type with no adapter.
+would, and adds the board as long as that fetch **succeeds** (a reachable board
+with zero current postings still goes in, with a note). Probe refuses a board
+that errors, since it would fail on each run. Entries land in `config.json`
+**in their ATS group** (one contiguous block per type, in canonical adapter
+order), matching the file's style. Probe skips any type with no adapter.
 
 ## Adding a board
 
@@ -174,7 +173,7 @@ Leave a list empty (`[]`) to skip that check.
 
 ## Running it on a schedule (later)
 
-Built for manual use. Add a cron entry to run on a schedule:
+Add a cron entry to run on a schedule:
 
 ```
 0 9,13,17 * * *  cd /home/sp/Documents/Projects/Job-Watch && python3 jobwatch.py >> log.txt 2>&1
@@ -188,10 +187,14 @@ desktop/email/Discord notifications.
 Each ATS adapter reads a JSON API or scrapes HTML and returns a list of jobs.
 Add `adapters/<name>.py` with a `fetch_<name>(board)` that returns the normalized
 job dict (`id, title, location, posted, url, company`), then import it into
-`jobwatch.py` and register it in the `ADAPTERS` dict. ~30 lines each. Shared helpers (`HEADERS`, `BROWSER_UA`,
+`jobwatch.py` and register it in the `ADAPTERS` dict. Add detection rows in
+`probe/signatures.py` (`HOST_RULES` / `HTML_SIGNATURES` / `SUPPORTED_TYPES`),
+and optionally a confirmer in `probe/confirm.py`. Run the tests — one enforces
+that `SUPPORTED_TYPES` stays in sync with `ADAPTERS`. Shared helpers (`HTTP`,
+`HEADERS`, `BROWSER_UA`, `TIMEOUT`, `new_session`, `polite_sleep`,
 `_slug_from_url`) live in `adapters/common.py`.
 
 Before optimizing an adapter's paging, read
-[docs/performance.md](docs/performance.md): where a run's time goes, and which
-speedups are measured dead ends (raising Workday's page size past 20 returns
-HTTP 400 and takes out all 99 Workday boards).
+[docs/optimization-plan.md](docs/optimization-plan.md): where a run's time goes,
+and which speedups are measured dead ends (raising Workday's page size past 20
+returns HTTP 400 and takes out all 99 Workday boards).
