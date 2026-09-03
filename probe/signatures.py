@@ -1,12 +1,6 @@
-"""ATS detection signature tables — the declarative heart of probe.
+"""ATS detection signature tables — adding a new ATS is mostly adding rows here."""
 
-Adding support for a new ATS is mostly a matter of adding rows here (plus an
-adapter in jobwatch and, for GH/Lever/Ashby-style platforms, a confirmer in
-`confirm.py`). Keeping these as data — not code — is what makes detection
-open-for-extension: a new platform is a new row, not a new branch.
-"""
-
-# Types we have a working adapter for (must stay in sync with jobwatch.ADAPTERS).
+# Must stay in sync with jobwatch.ADAPTERS (a test enforces this).
 SUPPORTED_TYPES = {
     "workday", "greenhouse", "lever", "ashby", "phenom", "successfactors",
     "oracle", "radancy", "smartrecruiters", "bamboohr", "rippling", "ripplematch",
@@ -14,8 +8,7 @@ SUPPORTED_TYPES = {
     "workable", "yello", "zohorecruit",
 }
 
-# (type, host-regex). Matched against the final (post-redirect) URL's host and
-# the original host. A host match is high confidence — it *is* the ATS.
+# (type, host-regex). High confidence — the URL *is* the ATS.
 HOST_RULES = [
     ("workday", r"\.myworkdayjobs\.com$|\.myworkdaysite\.com$"),
     ("greenhouse", r"(^|\.)(job-boards|boards)\.greenhouse\.io$"),
@@ -39,16 +32,10 @@ HOST_RULES = [
     ("zohorecruit", r"\.zohorecruit\.(com|ca|eu|in|com\.au|jp)$"),
 ]
 
-# (type, html-regex, slug-capture-regex-or-None). Looked for in the page HTML to
-# catch a white-labeled backend. The 2nd regex, if set, pulls the real slug from
-# the first matching URL in the page. Medium confidence (HTML can lie — e.g.
-# "Greenhouse Gas" ESG copy, a "Workday" job *title*) so GH/Lever/Ashby get
-# actively confirmed before we trust them.
-#
-# ORDER MATTERS: most-specific signatures first. Front-end platforms (Radancy,
-# Phenom) often embed links to a secondary ATS (a stray myworkdayjobs.com URL),
-# so their own specific CDN/script signatures must be checked BEFORE Workday's
-# generic host substring — otherwise a TalentBrew site gets mislabeled "workday".
+# (type, html-regex, slug-capture-regex-or-None). Medium confidence — HTML can
+# lie ("Greenhouse Gas" copy, a "Workday" job title), so GH/Lever/Ashby get
+# actively confirmed. ORDER MATTERS: most-specific first (Radancy/Phenom embed
+# stray Workday URLs, so their signatures must precede Workday's generic one).
 HTML_SIGNATURES = [
     ("greenhouse", r"(?:boards|job-boards)\.greenhouse\.io|grnh\.se|greenhouse\.io/embed",
      r"(?:boards|job-boards)\.greenhouse\.io/(?:embed/job_board\?for=)?([a-z0-9_-]+)"),
@@ -77,7 +64,6 @@ HTML_SIGNATURES = [
     ("zohorecruit", r"\.zohorecruit\.(com|ca|eu|in|com\.au|jp)", None),
 ]
 
-# Recognised but unsupported — reported by name only (no adapter).
 OTHER_ATS = [
     ("IBM/Infinite Brassring (Kenexa)", r"brassring\.com|kenexa"),
     ("Cornerstone OnDemand", r"\.csod\.com|cornerstoneondemand"),
@@ -94,6 +80,5 @@ OTHER_ATS = [
     ("Workday (peakon/other)", r"\.wd\d+\."),
 ]
 
-# For GH/Lever/Ashby a white-labeled board keeps the user-facing URL but pins the
-# real slug in this per-type config field.
+# White-labeled GH/Lever/Ashby boards pin their real slug in this config field.
 OVERRIDE_FIELD = {"greenhouse": "token", "lever": "company", "ashby": "board"}

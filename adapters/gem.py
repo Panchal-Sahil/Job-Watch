@@ -21,18 +21,13 @@ def fetch_gem(board):
     }], headers=HEADERS, timeout=TIMEOUT)
     resp.raise_for_status()
 
-    # response is an array (batch) — get the first result's data
     data = resp.json()[0]["data"]
 
-    # company display name from the board metadata, fall back to config/slug
     board_info = data.get("jobBoardExternal") or {}
     company = board_info.get("teamDisplayName") or company
 
-    # loop over each job posting and normalize to the 6-key contract
     jobs = []
     for p in data["oatsExternalJobPostings"]["jobPostings"]:
-
-        # locations is an array of objects — join their "name" fields
         locs = p.get("locations") or []
         location = " ; ".join(loc["name"] for loc in locs if loc.get("name"))
 

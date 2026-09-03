@@ -1,14 +1,4 @@
-"""probe — detect which ATS a careers URL runs on, and emit a config.json entry.
-
-Point it at a careers URL and it figures out the Applicant Tracking System behind
-the page (host match → embedded white-label signature → active API confirmation →
-last-resort slug guess), then prints a ready-to-paste board entry. `--add` verifies
-the board actually fetches before inserting it.
-
-This package is the refactored form of the old single-file probe.py. The public
-surface is re-exported here so callers (and tests) can `import probe` and reach the
-key functions without knowing the internal module layout.
-"""
+"""probe — detect which ATS a careers URL runs on, and emit a config.json entry."""
 
 import requests  # re-exported so tests can patch probe.requests.Session
 

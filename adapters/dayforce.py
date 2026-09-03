@@ -1,15 +1,5 @@
-"""Dayforce (Ceridian) ATS adapter.
-
-Dayforce career sites are SSR Next.js apps fronted by NextAuth + Cloudflare. The
-job list comes from a JSON search API, but it requires a CSRF token:
-
-  1. GET the landing page         -> sets the __cf_bm cookie
-  2. GET /api/auth/csrf           -> NextAuth { "csrfToken": ... }
-  3. POST /api/geo/<ns>/jobposting/search  with header X-CSRF-TOKEN
-     (without it the API returns 403 Forbidden)
-
-URL like https://jobs.dayforcehcm.com/<locale>/<namespace>/<jobBoardCode>/jobs/<id>
--> locale (en-CA), namespace (sobeys), jobBoardCode (privateclientsite).
+"""Dayforce (Ceridian) ATS adapter. Requires a CSRF token:
+GET landing page (cookies) -> GET /api/auth/csrf -> POST search with X-CSRF-TOKEN.
 """
 
 import re
@@ -17,15 +7,14 @@ from urllib.parse import urlparse
 
 from adapters.common import BROWSER_UA, new_session, TIMEOUT
 
-PAGE_SIZE = 25  # Dayforce fixes the search page size at 25
+PAGE_SIZE = 25
 
 
 def fetch_dayforce(board):
     parsed = urlparse(board["url"])
-    host = parsed.netloc  # jobs.dayforcehcm.com
+    host = parsed.netloc
     segs = [s for s in parsed.path.split("/") if s]
 
-    # Optional leading locale segment (en-CA, fr-CA, en-US...).
     locale = board.get("locale")
     if not locale and segs and re.fullmatch(r"[a-z]{2}-[A-Z]{2}", segs[0]):
         locale = segs[0]
@@ -42,8 +31,7 @@ def fetch_dayforce(board):
     sess.headers["User-Agent"] = BROWSER_UA
     referer = f"https://{host}/{locale}/{namespace}/{job_board_code}"
 
-    # 1) prime cookies, 2) fetch the NextAuth CSRF token
-    sess.get(referer, timeout=TIMEOUT).raise_for_status()
+    sess.get(referer, timeout=TIMEOUT).raise_for_status()  # prime cookies
     csrf = sess.get(f"https://{host}/api/auth/csrf", timeout=TIMEOUT)
     csrf.raise_for_status()
     token = csrf.json().get("csrfToken", "")

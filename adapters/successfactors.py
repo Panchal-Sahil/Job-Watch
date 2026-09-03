@@ -1,12 +1,4 @@
-"""SAP SuccessFactors (RMK) ATS adapter.
-
-SuccessFactors career sites ship in two template families. The **classic** RMK
-template renders job *tiles* as HTML from a `tile-search-results/` GET; the
-**modern** Career Site Builder (CSB) template renders client-side from a
-`POST /services/recruiting/v1/jobs` JSON API and serves an empty stub to the old
-tile endpoint. `fetch_successfactors` tries the JSON API first and falls back to
-scraping tiles, so a board entry needs only its search URL regardless of template.
-"""
+"""SAP SuccessFactors (RMK) ATS adapter. Modern CSB JSON API, classic tile fallback."""
 
 import html
 import json
@@ -17,23 +9,16 @@ import requests
 
 from adapters.common import BROWSER_UA, HTTP, new_session, polite_sleep, TIMEOUT
 
-# Canadian province/territory codes, used to recover clean locations from SF slugs.
 CA_PROV = {"ON", "BC", "QC", "AB", "MB", "SK", "NS", "NB", "NL", "PE", "YT", "NT", "NU"}
 
-# Job-fields that hold a location on the modern JSON API, tried in this order. The
-# CSB config maps location onto an arbitrary custom field, so which key carries it
-# varies per site (Deloitte uses `mfield1`, Teck uses `jobLocationShort`); when none
-# of these is present we fall back to sniffing any field whose values look like
-# "City, PROV" placenames.
+# CSB maps location onto an arbitrary custom field per site.
 _MODERN_LOC_KEYS = ("jobLocationShort", "displayLocation", "location", "city",
                     "mfield1", "mfield2", "mfield3")
 _LOC_LIKE = re.compile(r"[A-Za-z].*,\s*[A-Z]{2}\b")
 
 
 def _modern_location(resp):
-    """Best-effort location string from a modern-API job. Cleans embedded markup
-    (Teck ships `Red Dog, AK, USA, 99752<br/>`) and joins multi-site roles with
-    '; ' so location filters have real placenames to match."""
+    """Best-effort location from a modern-API job. Strips embedded HTML."""
     def clean(val):
         vals = val if isinstance(val, list) else [val]
         out = []
@@ -42,7 +27,7 @@ def _modern_location(resp):
             v = re.sub(r"\s+", " ", v).strip().strip(",").strip()
             if v:
                 out.append(v)
-        return list(dict.fromkeys(out))  # dedupe, preserve order
+        return list(dict.fromkeys(out))
 
     for key in _MODERN_LOC_KEYS:
         if resp.get(key):
@@ -58,38 +43,25 @@ def _modern_location(resp):
 
 
 def _fetch_modern(url, netloc, company):
-    """Fetch jobs from a modern Career Site Builder board via its JSON API. Returns
-    a normalized job list, or None if this site isn't the modern template (the API
-    404s / 401s / lacks the expected shape) so the caller can fall back to classic
-    tile scraping."""
+    """Returns job list, or None if this isn't a modern template (caller falls back)."""
     sess = new_session()
     sess.headers["User-Agent"] = BROWSER_UA
-    # Warm the session on the board's own page to pick up any required cookies.
     try:
-        sess.get(url, timeout=TIMEOUT)
+        sess.get(url, timeout=TIMEOUT)  # warm cookies
     except requests.RequestException:
         return None
     api = f"https://{netloc}/services/recruiting/v1/jobs"
     jobs, seen, page = [], set(), 0
-    while page < 200:  # safety cap
+    while page < 200:
         body = json.dumps({"keywords": "", "locale": "en_US", "location": "",
                            "pageNumber": page, "sortBy": "recent"})
-        # A transport failure that outlived the session's retries used to propagate
-        # from here and cost the entire board — this is the path that lost CPKC and
-        # CapGemini, the two slowest SuccessFactors boards, in a run where both
-        # fetched fine on their own. Treat it exactly like the response-shape
-        # failures below: fall back to tiles on page 0, keep what we have after that.
+        # Transport failure: fall back on page 0, keep collected jobs after.
         try:
             r = sess.post(api, headers={"Content-Type": "application/json"},
                           data=body, timeout=TIMEOUT)
         except requests.RequestException:
             return None if page == 0 else jobs
-        # A failure *on page 0* means this isn't a modern site (classic sites 401/404
-        # this path, or answer without the results block) — return None so the caller
-        # scrapes tiles. But once page 0 has proven the site modern, the same symptoms
-        # on a *later* page just mean we've paged past the end (some tenants drop the
-        # `jobSearchResult` key past the last page) — break and keep what we collected,
-        # never discard it by returning None.
+        # Page 0 fail = not modern; later fail = paged past end.
         bad = (not r.ok)
         data = None
         if not bad:
@@ -120,9 +92,7 @@ def _fetch_modern(url, netloc, company):
                 "url": f"https://{netloc}/job/{quote(str(url_title))}/{jid}-en_US",
                 "company": company,
             })
-        # Stop when a page yields nothing new: `totalJobs` overcounts the distinct
-        # postings (it counts location expansions), so paging by it re-serves the
-        # last page. An all-duplicate/empty page means we've walked the whole board.
+        # totalJobs overcounts (location expansions), so stop on all-duplicate page.
         if new == 0:
             break
         page += 1
@@ -131,8 +101,6 @@ def _fetch_modern(url, netloc, company):
 
 
 def fetch_successfactors(board):
-    """SAP SuccessFactors career site. Tries the modern Career Site Builder JSON API
-    first, then falls back to scraping the classic RMK tile endpoint."""
     parsed = urlparse(board["url"])
     company = board.get("name", parsed.netloc)
     jobs = _fetch_modern(board["url"], parsed.netloc, company)
@@ -142,10 +110,7 @@ def fetch_successfactors(board):
 
 
 def _fetch_classic(parsed, company):
-    """Classic RMK career site. Hits the tile-search-results endpoint, preserving the
-    board URL's own query string (its Canada/student facets), and parses the returned
-    HTML tiles."""
-    # Swap the search path segment for the tile-results endpoint.
+    """Classic RMK tile endpoint."""
     path = re.sub(r"/(search|searchjobs|SearchJobs)/?$", "/tile-search-results/",
                   parsed.path, flags=re.I)
     if "tile-search-results" not in path:
@@ -175,7 +140,7 @@ def _fetch_classic(parsed, company):
             ml = loc_re.search(t)
             if ml:
                 location = re.sub(r"<[^>]+>|\s+", " ", ml.group(1)).strip()
-            else:  # TELUS-style templates hide location; recover City+PROV from slug
+            else:  # TELUS-style: recover City+PROV from slug
                 parts = unquote(data_url).split("/job/")[-1].rsplit("/", 2)[0].split("-")
                 city = parts[0] if parts else ""
                 prov = next((p for p in reversed(parts) if p in CA_PROV), "")
@@ -189,7 +154,7 @@ def _fetch_classic(parsed, company):
                 "company": company,
             })
         startrow += len(tiles)
-        if len(tiles) < 10 or startrow > 2000:  # last page / safety cap
+        if len(tiles) < 10 or startrow > 2000:
             break
         polite_sleep(0.3)
     return jobs

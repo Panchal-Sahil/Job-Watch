@@ -5,12 +5,8 @@ from urllib.parse import urlparse
 
 from adapters.common import BROWSER_UA, HTTP, polite_sleep, TIMEOUT, _slug_from_url
 
-# A vanity careers page (www.assent.com/company/careers/, dexterra.com/en-ca/...)
-# has no company id in its path — the real one is embedded in the page, either in
-# the job-widget config or in the smartrecruiters.com links the page renders.
-# Ordered most-specific-first; the job-link patterns require the following segment
-# to look like a job id so asset paths (static.smartrecruiters.com/job-widget/1.6.2)
-# can't be mistaken for a company.
+# Vanity pages embed the real company id in widget config or SR links.
+# Most-specific-first; job-link patterns require a job-id-shaped next segment.
 _SR_COMPANY_RES = [
     re.compile(r"""["']company_code["']\s*:\s*["']([A-Za-z0-9_.-]+)["']"""),
     re.compile(r"\bdcr_ci=([A-Za-z0-9_.-]+)"),
@@ -24,8 +20,7 @@ _SR_HOST_RE = re.compile(r"(^|\.)(careers|jobs)\.smartrecruiters\.com$", re.I)
 
 
 def extract_smartrecruiters_company(html):
-    """The real SmartRecruiters company id embedded in a vanity careers page, or None.
-    Shared with probe so a probed vanity board gets its `company` pinned at add-time."""
+    """Real company id from a vanity page, or None. Shared with probe."""
     for pat in _SR_COMPANY_RES:
         m = pat.search(html or "")
         if m:
@@ -40,19 +35,12 @@ def _resolve_vanity_company(url):
 
 
 def fetch_smartrecruiters(board):
-    """SmartRecruiters public Posting API.
-    URL like https://careers.smartrecruiters.com/<company>/ -> company.
-    On a vanity domain the path holds no company id, so it is resolved from the
-    page (or pinned via "company" in config). A pinned id that returns nothing
-    triggers a one-shot re-resolve — the API answers 200 + totalFound:0 for an
-    unknown company, so a wrong id fails silently rather than raising."""
+    """SmartRecruiters Posting API. Vanity domains need company-id resolution."""
     parsed = urlparse(board["url"])
     on_ats = bool(_SR_HOST_RE.search(parsed.netloc))
     company_id = _slug_from_url(board["url"], "company", board)
 
-    # Proactively resolve for a vanity domain with nothing pinned: the last path
-    # segment is meaningless there ("careers", "en-ca", "jobs"), so trusting it
-    # would query a company that doesn't exist and quietly return zero jobs.
+    # Vanity path segments are meaningless; resolve the real company id upfront.
     tried_resolve = False
     if not on_ats and not board.get("company"):
         company_id = _resolve_vanity_company(board["url"]) or company_id
@@ -71,9 +59,7 @@ def fetch_smartrecruiters(board):
         data = r.json()
         postings = data.get("content", [])
 
-        # Reactive self-heal: an empty first page on a vanity board whose id was
-        # pinned (possibly staler than the page) is indistinguishable from a real
-        # empty board, so re-resolve once and retry before believing the zero.
+        # Stale pinned id returns 200 + 0 jobs; re-resolve once before believing.
         if not postings and offset == 0 and not on_ats and not tried_resolve:
             tried_resolve = True
             real = _resolve_vanity_company(board["url"])

@@ -1,9 +1,4 @@
-"""Command-line entry point: argument parsing and per-URL orchestration.
-
-main() collects (name, url) pairs, runs each through probe(), prints a report, and
-— with --add — verifies the board fetches before inserting it into config.json. One
-bad URL never sinks the batch.
-"""
+"""Command-line entry point for probe."""
 
 import argparse
 import sys
@@ -19,8 +14,7 @@ OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output" / "probe"
 
 
 def _handle_one(url, name, do_add):
-    """Probe one URL, print its report, optionally add it. Returns a one-line
-    status string for the batch summary."""
+    """Probe one URL, print its report, optionally add it."""
     res = probe(url)
     if name and res.config:
         res.config["name"] = name
@@ -54,10 +48,7 @@ def _handle_one(url, name, do_add):
         print(f"\n  Not added: '{res.type}' has no adapter yet.")
         return f"{res.type} (no adapter, skipped)"
 
-    # Verify it actually works in jobwatch before touching config.json. The
-    # validity test is whether the fetch *succeeds* — a reachable board with 0
-    # current postings is still valid (a company can just have nothing open now),
-    # so only an error blocks the add. 0 jobs is surfaced as a heads-up.
+    # 0 jobs is valid (nothing open right now); only errors block the add.
     print("\n  Verifying (fetching the board the same way jobwatch will)...")
     n, error = _verify(res.config)
     if error:
@@ -93,9 +84,8 @@ def main():
     summary = []
     for name, url in entries:
         try:
-            # Inline 'Name, url' wins; --name covers the single-URL no-inline case.
             status = _handle_one(url, name or args.name, args.add)
-        except Exception as e:  # never let one bad URL sink the batch
+        except Exception as e:
             print(f"\n  URL:      {url}\n  ERROR: {e}")
             status = f"ERROR: {e}"
         summary.append((name or args.name, url, status))
@@ -109,7 +99,6 @@ def main():
                 print(f"  {status:42}  {url}")
     print()
 
-    # Write results to a timestamped log file.
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     out_path = OUTPUT_DIR / f"probe-{stamp}.out"
