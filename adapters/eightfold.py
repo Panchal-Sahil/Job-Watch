@@ -6,24 +6,14 @@ from urllib.parse import urlparse
 
 from adapters.common import BROWSER_UA, new_session, TIMEOUT
 
-# The page embeds its config (HTML-escaped) with the API domain. The cookie
-# block also carries a "domain", so we take the FIRST match — that's the site's
-# own (e.g. apply.careers.microsoft.com lists "microsoft.com" before the
-# "careers.microsoft.com" cookie domain).
+# First match is the site's own domain; the cookie block also has a "domain".
 _DOMAIN_RE = re.compile(r'(?:&#34;|")domain(?:&#34;|")\s*:\s*(?:&#34;|")([a-z0-9.\-]+\.[a-z]{2,})')
 _CSRF_RE = re.compile(r'name="_csrf"\s+content="([^"]+)"')
 
-# Eightfold's /api/pcsx/search caps results at 10 per page regardless of `num`,
-# so we always page through with `start`.
-PAGE = 10
+PAGE = 10  # server caps at 10 regardless of `num`
 
 
 def fetch_eightfold(board):
-    """Eightfold career site (the PCSX / careerhub variant). Loads the careers
-    page for its CSRF token + API domain, then pages the `/api/pcsx/search`
-    JSON endpoint. Like Phenom, it searches early-careers keywords (from the
-    board's `query`, else config's `query_terms`) to avoid pulling the whole
-    company; an empty term searches everything."""
     url = board["url"]
     host = urlparse(url).netloc
     ua = {"User-Agent": BROWSER_UA}
