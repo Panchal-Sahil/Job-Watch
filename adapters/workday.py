@@ -8,55 +8,27 @@ from urllib.parse import urlparse
 
 from adapters.common import HEADERS, HTTP, polite_sleep, TIMEOUT
 
-# Workday's list endpoint collapses a posting tied to several offices into a count
-# placeholder ("2 Locations") instead of city names — which defeats location filters.
+# Workday collapses multi-office postings into "2 Locations" placeholders.
 _MULTI_LOC_RE = re.compile(r"^\d+\s+locations?$", re.IGNORECASE)
 
-# Server-enforced: limit=21 and above is a hard HTTP 400 (verified on three tenants).
-# A 4,000-job board is therefore 200+ requests, so they are issued in parallel once
-# page 0 reports the total — see the pod pools below.
-_PAGE_LIMIT = 20
+_PAGE_LIMIT = 20  # server-enforced; limit=21+ is a hard 400
 
-# Pages are fanned out over a pool per Workday *pod* (the `wd5.myworkdayjobs.com` half
-# of the hostname), not one per board and not one shared by all.
-#
-# Workday throttles by pod, not by tenant: fanning every board's pages over a single
-# 32-thread pool drew 429s from four separate wd5 tenants in one run, while wd3 — more
-# boards, comparable request volume, but spread over many small boards — was fine. A
-# pod is one queue on their side, so it gets one bounded queue on ours. Sizing:
-#
-#   * per-pod, not global — one pod's backlog can't starve another's pages, which a
-#     single shared pool with a per-pod semaphore would allow (every thread parked
-#     waiting on the busy pod);
-#   * per-pod, not per-board — a per-board pool multiplies threads by boards in flight,
-#     and lets several tenants on one pod burst at it simultaneously, which is the
-#     thing that drew the 429s;
-#   * 8 deep, below the ~19 concurrent requests one pod already absorbed under
-#     sequential paging (one in flight per board, all boards at once, never throttled).
-#
-# Peak threads: `max_workers` outer + 8 per pod actually paging (8 pods in config, and
-# pools are created lazily, so in practice far fewer). Page tasks only issue HTTP,
-# never submitting back into a pool, so an outer thread waiting on one cannot deadlock.
+# Workday throttles by pod, not tenant — a single shared pool drew 429s from
+# multiple wd5 tenants while wd3 was fine. Per-pod pools isolate the queues.
+# 8 threads stays below the ~19 concurrent requests that never triggered throttling.
 _PAGE_WORKERS = 8
 _POOLS = {}
 _POOLS_LOCK = threading.Lock()
 
-# Per-pod concurrency limit for board-level fetching. The pod pools limit
-# *paging* concurrency within a pod; this limits how many boards on the same
-# pod can be fetching at once from the outer thread pool. Without it, 20+
-# boards sharing a pod (wd5 in practice) fire page-0 requests simultaneously
-# — the resulting burst draws 429s that the retry loop can't clear because
-# every board backs off and retries in sync. At the default (6), 6 boards ×
-# 1 page-0 request each plus 8 paging threads stays under the ~19 concurrent
-# requests per pod that never triggered throttling. Override via
-# `workday_pod_limit` in config.json.
+# Limits how many boards on the same pod fetch concurrently from the outer pool.
+# Without it, 20+ boards sharing wd5 fire page-0 simultaneously and draw 429s.
+# At 6: 6 boards × 1 page-0 + 8 paging threads stays under the safe ~19 threshold.
 POD_LIMIT = 6
 _SEMS = {}
 _SEMS_LOCK = threading.Lock()
 
 
 def _sem_for(host):
-    """A bounded semaphore for `host`'s pod, created on first use."""
     key = _pod(host)
     with _SEMS_LOCK:
         sem = _SEMS.get(key)
@@ -64,23 +36,19 @@ def _sem_for(host):
             sem = _SEMS[key] = threading.Semaphore(POD_LIMIT)
         return sem
 
-# A 429 costs the whole board, so back off and retry rather than fail. Absolute
-# seconds, deliberately not scaled by DELAY_SCALE: this is the server telling us to
-# wait, not our own politeness margin.
+# Absolute seconds, not scaled by DELAY_SCALE — the server is telling us to wait.
 _MAX_ATTEMPTS = 4
 _BACKOFF = 2.0
 _MAX_BACKOFF = 30.0
 
 
 def _pod(host):
-    """The pod a Workday host belongs to — `acme.wd5.myworkdayjobs.com` and
-    `other.wd5.myworkdayjobs.com` share one, and so share a rate limit.
-    (`wd3.myworkdaysite.com` has no tenant label; the last three labels cover both.)"""
+    """Last three host labels — acme.wd5.myworkdayjobs.com and
+    other.wd5.myworkdayjobs.com share one pod and one rate limit."""
     return ".".join(host.split(".")[-3:])
 
 
 def _pool_for(host):
-    """The page pool for `host`'s pod, created on first use."""
     key = _pod(host)
     with _POOLS_LOCK:
         pool = _POOLS.get(key)
@@ -94,11 +62,8 @@ _RETRYABLE = (429, 502, 503, 520)
 
 
 def _post_page(endpoint, offset):
-    """POST one page of the job list, retrying on transient errors (429, 502, 503, 520).
-
-    Returns the response. Any other bad status is left for the caller to raise on,
-    so the underscore-tenant retry can still inspect a 404/422 itself.
-    """
+    """POST one page, retrying transient errors. Non-retryable statuses left
+    for the caller (underscore-tenant retry inspects 404/422 itself)."""
     body = {"appliedFacets": {}, "limit": _PAGE_LIMIT, "offset": offset, "searchText": ""}
     for attempt in range(_MAX_ATTEMPTS):
         resp = HTTP.post(endpoint, headers=HEADERS, json=body, timeout=TIMEOUT)
@@ -109,12 +74,11 @@ def _post_page(endpoint, offset):
         except (TypeError, ValueError):
             wait = 0
         time.sleep(min(max(wait, _BACKOFF * 2 ** attempt), _MAX_BACKOFF))
-    return resp  # unreachable: the loop returns on its last attempt
+    return resp
 
 
 def _resolve_locations(host, tenant, site, ext):
-    """Fetch a single job's detail endpoint and return its real locations joined as
-    "City A, City B". Returns "" on any failure so the caller keeps the placeholder."""
+    """Fetch a job's detail endpoint; return real locations or "" on failure."""
     try:
         detail = f"https://{host}/wday/cxs/{tenant}/{site}{ext}"
         resp = HTTP.get(detail, headers=HEADERS, timeout=TIMEOUT)
@@ -129,51 +93,30 @@ def _resolve_locations(host, tenant, site, ext):
 
 
 def _fetch_page(endpoint, offset):
-    """Fetch one page and return its `jobPostings` (possibly empty).
-
-    Used for every page after the first, from the pod's pool. Raises on a bad status,
-    which the caller lets propagate so the board fails as a whole.
-    """
-    polite_sleep(0.5)  # stagger the fan-out, same weight as the old per-page pause
+    """Fetch one page from the pod pool. Raises on bad status."""
+    polite_sleep(0.5)
     resp = _post_page(endpoint, offset)
     resp.raise_for_status()
     return resp.json().get("jobPostings", [])
 
 
 def fetch_workday(board):
-    """Fetch all postings from one Workday board.
-
-    A Workday URL looks like:
-        https://acme.wd5.myworkdayjobs.com/en-US/External_Careers
-    From it we derive the JSON endpoint:
-        https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/External_Careers/jobs
-    which we POST to, paging via offset. Page 0 is fetched first for its `total`;
-    every remaining offset is then known, so they go out in parallel (see
-    `_fetch_page`) instead of one round-trip after another.
-
-    The tenant is taken from the hostname unless config pins it or the URL carries a
-    "recruiting/<tenant>" segment; a hostname-derived tenant is retried once with its
-    hyphens turned back into underscores if Workday rejects it (see below).
-    """
+    """Fetch all postings from one Workday board."""
     url = board["url"]
     parsed = urlparse(url)
-    host = parsed.netloc  # acme.wd5.myworkdayjobs.com
+    host = parsed.netloc
 
-    # The site slug is the path segment after the optional locale (en-US, en-CA…)
-    # and, on the myworkdaysite.com variant, after a leading "recruiting/<tenant>".
     segs = [s for s in parsed.path.split("/") if s]
     if segs and re.fullmatch(r"[a-z]{2}-[A-Z]{2}", segs[0]):
         segs = segs[1:]  # drop locale
 
-    # Tenant: from config override, else the "recruiting/<tenant>" path segment
-    # (myworkdaysite.com), else the first hostname label (myworkdayjobs.com).
     tenant = board.get("tenant")
     if not tenant and len(segs) >= 2 and segs[0] == "recruiting":
         tenant = segs[1]
         segs = segs[2:]
     from_host = not tenant
     if not tenant:
-        tenant = host.split(".")[0]  # acme
+        tenant = host.split(".")[0]
 
     site = board.get("site") or (segs[0] if segs else None)
     if not site:
@@ -182,42 +125,30 @@ def fetch_workday(board):
     endpoint = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
     name = board.get("name")
 
-    # A tenant may contain an underscore, which a hostname label can't: tenant
-    # "vhr_genband" is served from vhr-genband.wd1.myworkdayjobs.com, and asking for
-    # the hyphenated name gets a 422. The two are indistinguishable in the URL, so
-    # when the tenant came from the hostname, retry once with the underscores back.
-    # (Only that path — a pinned or recruiting/<tenant> tenant is already literal.)
+    # Hostname can't carry underscores, so "vhr_genband" becomes "vhr-genband"
+    # in the URL — retry once with underscores if Workday rejects it.
     retry_underscore = from_host and "-" in tenant
 
-    # Resolving a "N Locations" placeholder costs a request per posting, and on a big
-    # board most postings are filtered out on their title alone — in which case the
-    # real location can't change the outcome. jobwatch supplies the title half of its
-    # filter here so we only pay for postings that could actually be surfaced.
-    # Absent (probe, tests), everything is a candidate — same behavior as before.
+    # title_ok: advisory filter hint so we skip resolving locations for titles
+    # that won't survive filtering. Ignoring it is always correct.
     title_ok = board.get("title_ok") or (lambda _t: True)
 
     with _sem_for(host):
-        # Page 0 stays sequential: it settles the underscore retry (which rewrites the
-        # endpoint) and reports `total`, and both have to be known before the remaining
-        # offsets can be computed and issued at once.
+        # Page 0 must be sequential — it settles the tenant and reports total.
         while True:
             resp = _post_page(endpoint, 0)
             if retry_underscore and resp.status_code in (404, 422):
                 retry_underscore = False
                 tenant = tenant.replace("-", "_")
                 endpoint = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
-                continue  # same offset — nothing was consumed
+                continue
             resp.raise_for_status()
             break
         data = resp.json()
         pages = [data.get("jobPostings", [])]
         total = data.get("total", 0)
 
-        # Workday pages by numeric offset and `total` is known now, so the rest of the
-        # requests are all computable up front rather than one-after-another. Ordering
-        # the results by offset keeps the returned list identical to the serial version;
-        # `map` also re-raises the first page's failure, so a bad page still fails the
-        # whole board rather than quietly returning a short list.
+        # Total is known — fan remaining pages out in parallel.
         if pages[0]:
             pages.extend(_pool_for(host).map(
                 lambda off: _fetch_page(endpoint, off),
@@ -231,15 +162,12 @@ def fetch_workday(board):
             bullets = p.get("bulletFields") or [ext]
             location = p.get("locationsText", "").strip()
             title = p.get("title", "").strip()
-            # Resolve "N Locations" placeholders to real city names (one extra
-            # request per affected posting) when enabled in config — but only for
-            # titles that could survive the filter (see title_ok above).
             if (ext and board.get("resolve_multi_location")
                     and _MULTI_LOC_RE.match(location) and title_ok(title)):
                 resolved = _resolve_locations(host, tenant, site, ext)
                 if resolved:
                     location = resolved
-                polite_sleep(0.5)  # be polite about the extra detail fetch
+                polite_sleep(0.5)
             jobs.append(
                 {
                     "id": f"{tenant}:{bullets[0]}",
