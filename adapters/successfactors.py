@@ -42,6 +42,12 @@ def _modern_location(resp):
     return ""
 
 
+def _detect_locale(html):
+    """Extract locale from the page's html lang attribute; fall back to en_US."""
+    m = re.search(r'<html[^>]*\blang=["\']?([a-zA-Z]{2}[_-][a-zA-Z]{2})', html)
+    return m.group(1).replace("-", "_") if m else "en_US"
+
+
 def _fetch_modern(url, netloc, company):
     """Returns job list, or None if this isn't a modern template (caller falls back)."""
     sess = new_session()
