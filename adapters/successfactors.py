@@ -42,18 +42,25 @@ def _modern_location(resp):
     return ""
 
 
+def _detect_locale(html):
+    """Extract locale from the page's html lang attribute; fall back to en_US."""
+    m = re.search(r'<html[^>]*\blang=["\']?([a-zA-Z]{2}[_-][a-zA-Z]{2})', html)
+    return m.group(1).replace("-", "_") if m else "en_US"
+
+
 def _fetch_modern(url, netloc, company):
     """Returns job list, or None if this isn't a modern template (caller falls back)."""
     sess = new_session()
     sess.headers["User-Agent"] = BROWSER_UA
     try:
-        sess.get(url, timeout=TIMEOUT)  # warm cookies
+        resp = sess.get(url, timeout=TIMEOUT)  # warm cookies
     except requests.RequestException:
         return None
+    locale = _detect_locale(resp.text)
     api = f"https://{netloc}/services/recruiting/v1/jobs"
     jobs, seen, page = [], set(), 0
     while page < 200:
-        body = json.dumps({"keywords": "", "locale": "en_US", "location": "",
+        body = json.dumps({"keywords": "", "locale": locale, "location": "",
                            "pageNumber": page, "sortBy": "recent"})
         # Transport failure: fall back on page 0, keep collected jobs after.
         try:
@@ -89,7 +96,7 @@ def _fetch_modern(url, netloc, company):
                 "title": html.unescape(title),
                 "location": _modern_location(resp),
                 "posted": resp.get("unifiedStandardStart", "") or "",
-                "url": f"https://{netloc}/job/{quote(str(url_title))}/{jid}-en_US",
+                "url": f"https://{netloc}/job/{quote(str(url_title))}/{jid}-{locale}",
                 "company": company,
             })
         # totalJobs overcounts (location expansions), so stop on all-duplicate page.
