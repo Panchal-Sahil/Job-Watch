@@ -85,11 +85,17 @@ def fetch_phenom(board):
                     job_id = f"phenom:{host}:{jid}"
                 if apply.endswith("/apply"):
                     apply = apply[:-6]
+                # Multi-location postings carry the primary city in
+                # cityStateCountry and every city in multi_location.
+                locs = [l.strip() for l in p.get("multi_location") or []
+                        if isinstance(l, str) and l.strip()]
+                location = "; ".join(locs) if len(locs) > 1 else (
+                    p.get("cityStateCountry") or p.get("cityState")
+                    or p.get("location") or "").strip()
                 by_id[jid] = {
                     "id": job_id,
                     "title": html.unescape(p.get("title") or "").strip(),
-                    "location": (p.get("cityStateCountry") or p.get("cityState")
-                                 or p.get("location") or "").strip(),
+                    "location": location,
                     "posted": (p.get("postedDate") or p.get("dateCreated") or "")[:10],
                     "url": apply,
                     "company": company,
