@@ -924,6 +924,21 @@ class TestPhenom(AdapterTestCase):
         posts = [c for c in fake.calls if c[0] == "POST"]
         self.assertIn("/campus/widgets", posts[0][1])
 
+    def test_multi_location_lists_every_city(self):
+        """A posting open in several cities lists all of them, not just the
+        primary one in cityStateCountry — otherwise location filters miss it."""
+        job = {**self._job(0), "cityStateCountry": "Montreal, Quebec",
+               "multi_location": ["Ottawa, Ontario", "Toronto, Ontario", "Montreal, Quebec"]}
+        data = {"refineSearch": {"totalHits": 1, "data": {"jobs": [job]}}}
+        jobs, _ = self.run_adapter(
+            phenom, phenom.fetch_phenom,
+            {"url": "https://careers.acme.com/careers"},
+            [("GET", "careers.acme.com/careers", jresp(text=self.LANDING)),
+             ("POST", "careers.acme.com/api/widgets", jresp(payload=data))])
+        self.assert_contract(jobs)
+        self.assertEqual(jobs[0]["location"],
+                         "Ottawa, Ontario; Toronto, Ontario; Montreal, Quebec")
+
     def test_workday_backend_uses_workday_id(self):
         """When applyUrl points to Workday, the ID should use the Workday
         tenant:reqId format so seen.json dedup works across adapters."""
