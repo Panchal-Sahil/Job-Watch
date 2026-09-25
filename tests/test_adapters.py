@@ -405,6 +405,25 @@ class TestOracle(AdapterTestCase):
         self.assertEqual(jobs[0]["id"], "oracle:acme.fa.ca2.oraclecloud.com:0")
         self.assertEqual(len([c for c in fake.calls if c[0] == "GET"]), 2)
 
+    def test_fans_out_remaining_pages_in_offset_order(self):
+        """Past page 0 the offsets are all computable from TotalJobsCount, so they are
+        fetched in parallel — the list must still read in offset order, and every
+        page must be requested exactly once."""
+        def route(url, **kw):
+            offset = int(kw["params"]["finder"].split("offset=")[1])
+            reqs = [{"Id": i, "Title": f"Job {i}"} for i in range(offset, min(offset + 200, 850))]
+            return jresp(payload={"items": [{"TotalJobsCount": 850, "requisitionList": reqs}]})
+
+        jobs, fake = self.run_adapter(
+            oracle, oracle.fetch_oracle,
+            {"url": "https://acme.fa.ca2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs"},
+            [("GET", "acme.fa.ca2.oraclecloud.com/hcmRestApi", route)])
+        self.assert_contract(jobs)
+        self.assertEqual([j["id"] for j in jobs],
+                         [f"oracle:acme.fa.ca2.oraclecloud.com:{i}" for i in range(850)])
+        self.assertEqual(sorted(int(c[2]["params"]["finder"].split("offset=")[1])
+                                for c in fake.calls), [0, 200, 400, 600, 800])
+
     def test_vanity_host_resolved_from_page(self):
         """A vanity domain can't serve the API; the real *.oraclecloud.com host is
         resolved up front from the page HTML, and the API is hit on THAT host."""
