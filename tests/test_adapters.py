@@ -764,19 +764,21 @@ class TestICIMSCareersHome(AdapterTestCase):
 
     def test_pages_and_stops(self):
         def route(url, **kw):
-            page = kw["params"]["page"]
-            if page == 1:
-                return jresp(payload={"totalCount": 15, "jobs": [self._row(i) for i in range(10)]})
-            return jresp(payload={"totalCount": 15, "jobs": [self._row(i) for i in range(10, 15)]})
+            # Like the real API: honors `limit`, falls back to 10 rows without it.
+            page, limit = kw["params"]["page"], kw["params"].get("limit", 10)
+            rows = range((page - 1) * limit, min(page * limit, 150))
+            return jresp(payload={"totalCount": 150, "jobs": [self._row(i) for i in rows]})
 
         jobs, fake = self.run_adapter(
             icims, icims.fetch_icims,
             {"url": "https://careers.acme.com/"},  # non-.icims.com -> careers-home SPA
             [("GET", "careers.acme.com/api/jobs", route)])
         self.assert_contract(jobs)
-        self.assertEqual(len(jobs), 15)
+        self.assertEqual(len(jobs), 150)
         self.assertEqual(jobs[0]["id"], "icims:careers.acme.com:R0")
-        self.assertEqual(len([c for c in fake.calls if c[0] == "GET"]), 2)
+        gets = [c for c in fake.calls if c[0] == "GET"]
+        self.assertEqual(len(gets), 2)
+        self.assertEqual(gets[0][2]["params"]["limit"], 100)
 
     def test_url_uses_vanity_host_not_apply_url(self):
         """apply_url often points to an icims.com backend with a /login suffix;
