@@ -216,6 +216,30 @@ class TestSharedSession(unittest.TestCase):
             self.assertEqual(sess.adapters[scheme].max_retries, common._RETRY)
 
 
+class TestSchedule(unittest.TestCase):
+    BOARDS = (
+        [{"name": f"w5-{i}", "type": "workday", "url": f"https://t{i}.wd5.myworkdayjobs.com/x"}
+         for i in range(4)]
+        + [{"name": f"w1-{i}", "type": "workday", "url": f"https://t{i}.wd1.myworkdayjobs.com/x"}
+           for i in range(3)]
+        + [{"name": f"gh-{i}", "type": "greenhouse", "url": "https://x"} for i in range(5)]
+        + [{"name": "lulu", "type": "avature", "url": "https://x"}])
+
+    def test_is_a_permutation(self):
+        got = jobwatch._schedule(self.BOARDS)
+        self.assertCountEqual([b["name"] for b in got], [b["name"] for b in self.BOARDS])
+
+    def test_every_lane_starts_in_the_first_round(self):
+        # A slow type at the end of config must not wait behind every other group.
+        first = [b["name"] for b in jobwatch._schedule(self.BOARDS)[:4]]
+        self.assertEqual(first, ["w5-0", "w1-0", "lulu", "gh-0"])
+
+    def test_pods_are_interleaved(self):
+        pods = [jobwatch._lane(b) for b in jobwatch._schedule(self.BOARDS)]
+        wd = [p for p in pods if "myworkdayjobs" in p]
+        self.assertEqual(wd[:6], ["wd5.myworkdayjobs.com", "wd1.myworkdayjobs.com"] * 3)
+
+
 class TestFetchBoard(unittest.TestCase):
     def setUp(self):
         # fetch_board reads config through cached module globals; pin them so these
