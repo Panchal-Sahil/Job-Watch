@@ -19,7 +19,8 @@ _RETRY = Retry(total=2, connect=2, read=2, status=0, other=0,
 def new_session():
     """Session with retry policy mounted; use when the board needs its own cookie jar."""
     sess = requests.Session()
-    adapter = HTTPAdapter(max_retries=_RETRY)
+    # Default caches pools for 10 hosts; the shared session talks to hundreds.
+    adapter = HTTPAdapter(max_retries=_RETRY, pool_connections=128, pool_maxsize=32)
     sess.mount("https://", adapter)
     sess.mount("http://", adapter)
     return sess

@@ -7,7 +7,7 @@ from urllib.parse import parse_qsl, urlparse
 
 from adapters.common import BROWSER_UA, new_session, TIMEOUT
 
-_HOME_PAGE_SIZE = 10
+_HOME_PAGE_SIZE = 100  # sent as `limit`; server default is 10
 
 _CARD = re.compile(r'<li class="iCIMS_JobCardItem">(.*?)</li>', re.S)
 _HREF = re.compile(r'href="([^"]*?/jobs/(\d+)/[^"]*?)"')
@@ -72,7 +72,7 @@ def _fetch_careers_home(board):
     for term in terms:
         page = 1
         while True:
-            params = {"page": page}
+            params = {"page": page, "limit": _HOME_PAGE_SIZE}
             if term:
                 params["keywords"] = term
             r = sess.get(api, params=params, timeout=TIMEOUT)

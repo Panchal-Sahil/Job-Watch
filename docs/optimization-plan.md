@@ -1,5 +1,41 @@
 # Performance Optimization Plan for jobwatch
 
+## Status (2026-09-24, 788 boards, branch `fix/performance`)
+
+Measured full runs from the same `seen.json`: **456s → 309s**.
+
+Shipped:
+- Per-board fetch time on the progress line (`_timed` in `jobwatch.py`).
+- Submission order (`_schedule`): round-robin across lanes (a lane is one Workday pod or
+  one other ATS type), heaviest lane first. This replaces "slowest types first" (item 1):
+  Workday, not Avature, is now the critical path.
+- Connection pools: `pool_connections=128, pool_maxsize=32` in `common.new_session()`.
+- iCIMS careers-home: `limit=100` is sent (verified on kpmg, amd, pepsico). Just raising
+  the constant would have stopped paging after page 1. It also lifts the old ~2010-job cap
+  from `page > 200`.
+- Oracle page fan-out after page 0 (item 2). Oracle thread-seconds went from 560 to 247.
+
+**The floor is Workday.** A Workday-only run takes ~305s: wd5 and wd1 each need ~3000
+pages at 8 page threads per pod. With 12 or 16 page threads, wd3 returned 105–162 HTTP
+429s, including detail lookups that quietly fall back to "N Locations". Keep
+`_PAGE_WORKERS = 8`. Server-side country facets were rejected: HR mis-tags countries.
+Raising `max_workers` can't beat the pod floor.
+
+Not done:
+- Early stop on seen IDs (item 3): `seen.json` holds only matched IDs, so it needs a
+  change to what that file means.
+- Per-board deadline (item 4): no board stalled; the slowest was 129s.
+
+Re-measuring (the `docs/performance.md` referenced below doesn't exist):
+
+    cp seen.json /tmp/seen.bak
+    /usr/bin/time -f "\nWALL: %e s" python3 jobwatch.py > run.log 2>&1
+    cp /tmp/seen.bak seen.json   # identical state for the next run
+
+The original plan (written at 696 boards, ~147s) follows.
+
+---
+
 ## Context
 
 jobwatch polls ~696 career boards concurrently via a `ThreadPoolExecutor(max_workers=32)`.

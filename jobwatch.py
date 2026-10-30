@@ -5,9 +5,12 @@ import argparse
 import json
 import re
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from itertools import zip_longest
 from pathlib import Path
+from urllib.parse import urlparse
 
 from adapters import common
 from adapters.ashby import fetch_ashby
@@ -194,6 +197,39 @@ def fetch_board(board):
         return name, [], str(e)
 
 
+# Rough seconds per board by type, measured on a full run. Only the ordering matters.
+_TYPE_WEIGHT = {"avature": 40, "yello": 35, "workday": 30, "radancy": 17, "oracle": 15,
+                "successfactors": 15, "eightfold": 8, "smartrecruiters": 7, "icims": 5,
+                "dayforce": 3, "phenom": 2}
+
+
+def _lane(board):
+    """Workday boards queue per pod (one rate limit each); everything else per type."""
+    kind = board.get("type", "workday")
+    if kind == "workday":
+        return workday_mod._pod(urlparse(board.get("url", "")).netloc)
+    return kind
+
+
+def _schedule(boards):
+    """Submission order: round-robin across lanes, heaviest lane first. Every pod and
+    every slow type starts in the first round instead of waiting behind its config
+    group, and no pod gets a run of workers stuck on its semaphore."""
+    lanes = {}
+    for b in boards:
+        lanes.setdefault(_lane(b), []).append(b)
+    order = sorted(lanes.values(), reverse=True,
+                   key=lambda ls: sum(_TYPE_WEIGHT.get(b.get("type", "workday"), 1)
+                                      for b in ls))
+    return [b for rnd in zip_longest(*order) for b in rnd if b is not None]
+
+
+def _timed(board):
+    """fetch_board plus its wall time, for the progress line."""
+    start = time.monotonic()
+    return fetch_board(board), time.monotonic() - start
+
+
 def _short_error(error, width=140):
     # Head+tail: urllib3 puts host at front, cause at back.
     text = " ".join(str(error).split())
@@ -240,13 +276,13 @@ def main():
     print(f"Fetching {total} board(s) (up to {workers} at a time)...", flush=True)
     results = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(fetch_board, b) for b in boards]
+        futures = [pool.submit(_timed, b) for b in _schedule(boards)]
         for done, fut in enumerate(as_completed(futures), 1):
-            name, jobs, error = fut.result()
+            (name, jobs, error), elapsed = fut.result()
             results.append((name, jobs, error))
             status = (f"{len(jobs)} jobs" if error is None
                       else f"ERROR: {_short_error(error)}")
-            print(f"  [{done:2}/{total}] {name:32} {status}", flush=True)
+            print(f"  [{done:2}/{total}] {name:32} {elapsed:5.1f}s  {status}", flush=True)
 
     # Diff + filter sequentially — keeps `seen` mutation single-threaded.
     new_jobs = []

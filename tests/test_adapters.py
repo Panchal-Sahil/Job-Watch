@@ -405,6 +405,25 @@ class TestOracle(AdapterTestCase):
         self.assertEqual(jobs[0]["id"], "oracle:acme.fa.ca2.oraclecloud.com:0")
         self.assertEqual(len([c for c in fake.calls if c[0] == "GET"]), 2)
 
+    def test_fans_out_remaining_pages_in_offset_order(self):
+        """Past page 0 the offsets are all computable from TotalJobsCount, so they are
+        fetched in parallel — the list must still read in offset order, and every
+        page must be requested exactly once."""
+        def route(url, **kw):
+            offset = int(kw["params"]["finder"].split("offset=")[1])
+            reqs = [{"Id": i, "Title": f"Job {i}"} for i in range(offset, min(offset + 200, 850))]
+            return jresp(payload={"items": [{"TotalJobsCount": 850, "requisitionList": reqs}]})
+
+        jobs, fake = self.run_adapter(
+            oracle, oracle.fetch_oracle,
+            {"url": "https://acme.fa.ca2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs"},
+            [("GET", "acme.fa.ca2.oraclecloud.com/hcmRestApi", route)])
+        self.assert_contract(jobs)
+        self.assertEqual([j["id"] for j in jobs],
+                         [f"oracle:acme.fa.ca2.oraclecloud.com:{i}" for i in range(850)])
+        self.assertEqual(sorted(int(c[2]["params"]["finder"].split("offset=")[1])
+                                for c in fake.calls), [0, 200, 400, 600, 800])
+
     def test_vanity_host_resolved_from_page(self):
         """A vanity domain can't serve the API; the real *.oraclecloud.com host is
         resolved up front from the page HTML, and the API is hit on THAT host."""
@@ -764,19 +783,21 @@ class TestICIMSCareersHome(AdapterTestCase):
 
     def test_pages_and_stops(self):
         def route(url, **kw):
-            page = kw["params"]["page"]
-            if page == 1:
-                return jresp(payload={"totalCount": 15, "jobs": [self._row(i) for i in range(10)]})
-            return jresp(payload={"totalCount": 15, "jobs": [self._row(i) for i in range(10, 15)]})
+            # Like the real API: honors `limit`, falls back to 10 rows without it.
+            page, limit = kw["params"]["page"], kw["params"].get("limit", 10)
+            rows = range((page - 1) * limit, min(page * limit, 150))
+            return jresp(payload={"totalCount": 150, "jobs": [self._row(i) for i in rows]})
 
         jobs, fake = self.run_adapter(
             icims, icims.fetch_icims,
             {"url": "https://careers.acme.com/"},  # non-.icims.com -> careers-home SPA
             [("GET", "careers.acme.com/api/jobs", route)])
         self.assert_contract(jobs)
-        self.assertEqual(len(jobs), 15)
+        self.assertEqual(len(jobs), 150)
         self.assertEqual(jobs[0]["id"], "icims:careers.acme.com:R0")
-        self.assertEqual(len([c for c in fake.calls if c[0] == "GET"]), 2)
+        gets = [c for c in fake.calls if c[0] == "GET"]
+        self.assertEqual(len(gets), 2)
+        self.assertEqual(gets[0][2]["params"]["limit"], 100)
 
     def test_url_uses_vanity_host_not_apply_url(self):
         """apply_url often points to an icims.com backend with a /login suffix;
