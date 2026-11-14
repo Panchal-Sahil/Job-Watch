@@ -385,10 +385,15 @@ class TestHelpers(unittest.TestCase):
     def test_path_slug_drops_locale(self):
         self.assertEqual(probe._path_slug("https://x.com/en-US/MyBoard"), "MyBoard")
 
-    def test_slug_candidates_skips_generic_words(self):
-        cands = probe._slug_candidates("https://www.careers.com/jobs", "<title>Jobs</title>")
-        for junk in ("www", "careers", "jobs", "com"):
-            self.assertNotIn(junk, cands)
+    def test_generic_words_are_never_guessed_as_slugs(self):
+        # Host labels and <title> are all stoplist words -> no slug-guess API calls.
+        url = "https://www.careers.com/jobs"
+        sess = FakeSession([("www.careers.com", page("<title>Jobs</title>"))],
+                           default=api({}, status=404))
+        with mock.patch.object(probe.requests, "Session", return_value=sess):
+            res = probe.probe(url)
+        self.assertIsNone(res.type)
+        self.assertEqual(sess.calls, [url])
 
 
 class TestInvariants(unittest.TestCase):

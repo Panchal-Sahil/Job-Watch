@@ -73,7 +73,7 @@ class TestAppendToConfig(ConfigWriterCase):
         self.assertEqual(boards[1]["name"], "C")
 
     def test_new_group_inserted_in_canonical_order(self):
-        # canonical order is jobwatch.ADAPTERS: workday ... greenhouse ... lever ...
+        # canonical order is adapters.ADAPTERS: workday ... greenhouse ... lever ...
         self.write([
             {"name": "A", "type": "workday", "url": "https://a.wd1.myworkdayjobs.com/x"},
             {"name": "B", "type": "lever", "url": "https://jobs.lever.co/b"},
