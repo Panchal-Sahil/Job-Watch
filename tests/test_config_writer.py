@@ -105,5 +105,28 @@ class TestAppendToConfig(ConfigWriterCase):
         self.assertEqual({b["name"] for b in boards}, {"A", "Z"})
 
 
+
+class TestVerify(ConfigWriterCase):
+    """--add verification must fetch the way a real run does, with this config's
+    knobs and filters, not module defaults."""
+
+    def test_uses_config_knobs_and_defaults(self):
+        from unittest import mock
+        import jobwatch
+        from adapters import common
+        self.path.write_text(json.dumps({
+            "boards": [], "request_delay_scale": 0.9, "workday_pod_limit": 2,
+            "query_terms": ["intern"], "filters": {"title_any": ["intern"]}}))
+        got = {}
+        with mock.patch.object(common, "DELAY_SCALE", common.DELAY_SCALE), \
+             mock.patch.object(jobwatch.workday_mod, "POD_LIMIT", jobwatch.workday_mod.POD_LIMIT), \
+             mock.patch.dict(jobwatch.ADAPTERS, {"fake": lambda b: got.update(b) or [{}]}):
+            n, error = probe._verify({"name": "Acme", "type": "fake", "url": "https://x"})
+            self.assertEqual(common.DELAY_SCALE, 0.9)
+            self.assertEqual(jobwatch.workday_mod.POD_LIMIT, 2)
+        self.assertEqual((n, error), (1, None))
+        self.assertEqual(got["query"], ["intern"])
+        self.assertFalse(got["title_ok"]("Senior Manager"))
+
 if __name__ == "__main__":
     unittest.main()

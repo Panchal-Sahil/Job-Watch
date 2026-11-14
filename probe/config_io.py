@@ -59,7 +59,7 @@ def _append_to_config(entry):
 
 
 def _verify(entry):
-    """Run the real jobwatch fetch path. Returns (job_count, error)."""
-    from jobwatch import fetch_board
-    _name, jobs, error = fetch_board(entry)
+    """Run the real jobwatch fetch path, with this config's knobs. Returns (job_count, error)."""
+    from jobwatch import make_fetcher
+    _name, jobs, error = make_fetcher(json.loads(CONFIG_PATH.read_text()))(entry)
     return len(jobs), error

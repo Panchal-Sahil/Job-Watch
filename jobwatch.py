@@ -144,57 +144,41 @@ def load_json(path, default):
     return default
 
 
-_DEFAULT_QUERY = None
+def make_fetcher(config):
+    """Build fetch_board(board) -> (name, jobs, error) from a loaded config.
 
+    Also applies the config's process-wide adapter knobs (`request_delay_scale`,
+    `workday_pod_limit`, both required). Call it once, before any fetch: Workday's
+    per-pod semaphores capture POD_LIMIT the first time each pod is used.
 
-def _default_query_terms():
-    """Early-careers search terms from config, cached. Also used by probe --add."""
-    global _DEFAULT_QUERY
-    if _DEFAULT_QUERY is None:
-        _DEFAULT_QUERY = load_json(CONFIG_PATH, {}).get("query_terms", [])
-    return _DEFAULT_QUERY
+    The returned fetch_board never raises, and fills config-level defaults into the
+    board dict: `query` (from `query_terms`), `resolve_multi_location`, `title_ok`.
+    """
+    common.DELAY_SCALE = config["request_delay_scale"]
+    workday_mod.POD_LIMIT = config["workday_pod_limit"]
 
-
-_RESOLVE_MULTI_LOC = None
-
-
-def _resolve_multi_location():
-    """Whether to resolve placeholder locations ("2 Locations") via detail endpoint."""
-    global _RESOLVE_MULTI_LOC
-    if _RESOLVE_MULTI_LOC is None:
-        _RESOLVE_MULTI_LOC = bool(load_json(CONFIG_PATH, {}).get("resolve_multi_location", False))
-    return _RESOLVE_MULTI_LOC
-
-
-_FILTERS = None
-
-
-def _filters():
-    global _FILTERS
-    if _FILTERS is None:
-        _FILTERS = load_json(CONFIG_PATH, {}).get("filters", {})
-    return _FILTERS
-
-
-def fetch_board(board):
-    """Fetch one board. Returns (name, jobs, error) — never raises."""
-    name = board.get("name", board.get("url", "?"))
-    kind = board.get("type", "workday")
-    adapter = ADAPTERS.get(kind)
-    if not adapter:
-        return name, [], f"no adapter for type '{kind}'"
-    if "query" not in board and _default_query_terms():
-        board = {**board, "query": _default_query_terms()}
-    if "resolve_multi_location" not in board and _resolve_multi_location():
-        board = {**board, "resolve_multi_location": True}
+    defaults = {}
+    if config.get("query_terms"):
+        defaults["query"] = config["query_terms"]
+    if config.get("resolve_multi_location"):
+        defaults["resolve_multi_location"] = True
+    filters = config.get("filters", {})
     # Advisory hint: ignoring it is always correct — matches() still runs in
     # full, so this can only skip work, never surface a wrong job.
-    if "title_ok" not in board:
-        board = {**board, "title_ok": lambda t: _title_matches(t, _filters())}
-    try:
-        return name, adapter(board), None
-    except Exception as e:
-        return name, [], str(e)
+    defaults["title_ok"] = lambda t: _title_matches(t, filters)
+
+    def fetch_board(board):
+        name = board.get("name", board.get("url", "?"))
+        kind = board.get("type", "workday")
+        adapter = ADAPTERS.get(kind)
+        if not adapter:
+            return name, [], f"no adapter for type '{kind}'"
+        try:
+            return name, adapter({**defaults, **board}), None
+        except Exception as e:
+            return name, [], str(e)
+
+    return fetch_board
 
 
 # Rough seconds per board by type, measured on a full run. Only the ordering matters.
@@ -224,10 +208,10 @@ def _schedule(boards):
     return [b for rnd in zip_longest(*order) for b in rnd if b is not None]
 
 
-def _timed(board):
-    """fetch_board plus its wall time, for the progress line."""
+def _timed(fetch, board):
+    """fetch plus its wall time, for the progress line."""
     start = time.monotonic()
-    return fetch_board(board), time.monotonic() - start
+    return fetch(board), time.monotonic() - start
 
 
 def _short_error(error, width=140):
@@ -258,8 +242,7 @@ def main():
     filters = config.get("filters", {})
     boards = config.get("boards", [])
     workers = config["max_workers"]
-    common.DELAY_SCALE = config["request_delay_scale"]
-    workday_mod.POD_LIMIT = config["workday_pod_limit"]
+    fetch = make_fetcher(config)
     seen = set(load_json(SEEN_PATH, []))
 
     if args.board:
@@ -276,7 +259,7 @@ def main():
     print(f"Fetching {total} board(s) (up to {workers} at a time)...", flush=True)
     results = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(_timed, b) for b in _schedule(boards)]
+        futures = [pool.submit(_timed, fetch, b) for b in _schedule(boards)]
         for done, fut in enumerate(as_completed(futures), 1):
             (name, jobs, error), elapsed = fut.result()
             results.append((name, jobs, error))

@@ -240,22 +240,27 @@ class TestSchedule(unittest.TestCase):
         self.assertEqual(wd[:6], ["wd5.myworkdayjobs.com", "wd1.myworkdayjobs.com"] * 3)
 
 
-class TestFetchBoard(unittest.TestCase):
+CONFIG = {"filters": FILTERS, "query_terms": ["intern"], "resolve_multi_location": True,
+          "request_delay_scale": 0.2, "workday_pod_limit": 6}
+
+
+class TestMakeFetcher(unittest.TestCase):
+    """fetch_board is built from a config value, so these tests hand it one directly
+    instead of patching module globals."""
+
     def setUp(self):
-        # fetch_board reads config through cached module globals; pin them so these
-        # tests don't depend on the live config.json.
-        for attr, value in (("_FILTERS", FILTERS), ("_DEFAULT_QUERY", ["intern"]),
-                            ("_RESOLVE_MULTI_LOC", True)):
-            patcher = mock.patch.object(jobwatch, attr, value)
+        # make_fetcher applies the runtime knobs; restore them after each test.
+        for module, attr in ((common, "DELAY_SCALE"), (jobwatch.workday_mod, "POD_LIMIT")):
+            patcher = mock.patch.object(module, attr, getattr(module, attr))
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def _capture(self, board):
+    def _capture(self, board, config=CONFIG):
         """Register a fake adapter that records the board dict it was handed."""
         seen = {}
         with mock.patch.dict(jobwatch.ADAPTERS,
                              {"fake": lambda b: seen.update(b) or []}):
-            name, jobs, error = jobwatch.fetch_board({**board, "type": "fake"})
+            name, jobs, error = jobwatch.make_fetcher(config)({**board, "type": "fake"})
         self.assertIsNone(error)
         return seen
 
@@ -270,14 +275,31 @@ class TestFetchBoard(unittest.TestCase):
         self.assertEqual(got["query"], ["intern"])
         self.assertTrue(got["resolve_multi_location"])
 
+    def test_optional_knobs_absent_inject_nothing(self):
+        got = self._capture({"name": "Acme", "url": "https://x"},
+                            {"request_delay_scale": 0, "workday_pod_limit": 1})
+        self.assertNotIn("query", got)
+        self.assertNotIn("resolve_multi_location", got)
+        self.assertTrue(got["title_ok"]("Anything At All"))
+
     def test_board_overrides_are_preserved(self):
         got = self._capture({"name": "Acme", "url": "https://x", "query": ["phd"],
                              "resolve_multi_location": False})
         self.assertEqual(got["query"], ["phd"])
         self.assertFalse(got["resolve_multi_location"])
 
+    def test_applies_runtime_knobs(self):
+        jobwatch.make_fetcher({**CONFIG, "request_delay_scale": 0.7, "workday_pod_limit": 3})
+        self.assertEqual(common.DELAY_SCALE, 0.7)
+        self.assertEqual(jobwatch.workday_mod.POD_LIMIT, 3)
+
+    def test_missing_required_knob_fails_loud(self):
+        with self.assertRaises(KeyError):
+            jobwatch.make_fetcher({"filters": FILTERS})
+
     def test_unknown_type_returns_error_not_raise(self):
-        name, jobs, error = jobwatch.fetch_board({"name": "Acme", "type": "nope"})
+        fetch = jobwatch.make_fetcher(CONFIG)
+        name, jobs, error = fetch({"name": "Acme", "type": "nope"})
         self.assertEqual(jobs, [])
         self.assertIn("no adapter", error)
 
@@ -286,7 +308,8 @@ class TestFetchBoard(unittest.TestCase):
             raise ValueError("kaboom")
 
         with mock.patch.dict(jobwatch.ADAPTERS, {"fake": boom}):
-            name, jobs, error = jobwatch.fetch_board({"name": "Acme", "type": "fake"})
+            fetch = jobwatch.make_fetcher(CONFIG)
+            name, jobs, error = fetch({"name": "Acme", "type": "fake"})
         self.assertEqual(jobs, [])
         self.assertEqual(error, "kaboom")
 
