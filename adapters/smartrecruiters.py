@@ -92,10 +92,11 @@ def fetch_smartrecruiters(board):
 
 def probe_entry(url, page_html, slug, on_ats):
     """Pin the company id: the first path segment on the ATS host; on a vanity
-    domain that segment is meaningless, so take the id embedded in the page."""
+    domain that segment is meaningless, so take the id embedded in the page.
+    On the ATS host the host label is just "Careers"/"Jobs", so the id verbatim
+    (capitals kept: AECOM2, WesternDigital) is the better name guess."""
     if on_ats:
         segs = [s for s in urlparse(url).path.split("/") if s]
-        company = segs[0] if segs else None
-    else:
-        company = extract_smartrecruiters_company(page_html)
+        return {"company": segs[0], "name": segs[0]} if segs else {}
+    company = extract_smartrecruiters_company(page_html)
     return {"company": company} if company else {}

@@ -346,12 +346,19 @@ class TestConfigEntry(unittest.TestCase):
                           ("company", "Palo Alto"), ("url", url)])
 
     def test_smartrecruiters_on_ats_pins_path_company(self):
-        # Name is the generic on-ATS default (first host label) — current behaviour.
+        # Name is the company id verbatim, not the host label "Careers".
         url = "https://careers.smartrecruiters.com/AECOM2"
         self.assertEqual(
             self.entry(url, [("careers.smartrecruiters.com", page("<html></html>"))]),
-            [("name", "Careers"), ("type", "smartrecruiters"),
+            [("name", "AECOM2"), ("type", "smartrecruiters"),
              ("company", "AECOM2"), ("url", url)])
+
+    def test_smartrecruiters_jobs_host_keeps_camelcase_id_as_name(self):
+        url = "https://jobs.smartrecruiters.com/WesternDigital"
+        self.assertEqual(
+            self.entry(url, [("jobs.smartrecruiters.com", page("<html></html>"))]),
+            [("name", "WesternDigital"), ("type", "smartrecruiters"),
+             ("company", "WesternDigital"), ("url", url)])
 
     def test_smartrecruiters_vanity_pins_embedded_company(self):
         url = "https://www.assent.com/company/careers/search/"
