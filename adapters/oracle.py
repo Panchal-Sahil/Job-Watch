@@ -13,7 +13,7 @@ _ORACLE_HOST_RE = re.compile(r"[a-z0-9][a-z0-9.-]*\.oraclecloud\.com", re.I)
 
 
 def extract_oracle_host(html):
-    """Real *.oraclecloud.com API host from a vanity page, or None. Shared with probe."""
+    """Real *.oraclecloud.com API host from a vanity page, or None."""
     m = _ORACLE_HOST_RE.search(html or "")
     return m.group(0).lower() if m else None
 
@@ -124,3 +124,12 @@ def fetch_oracle(board):
                                  range(_PAGE_LIMIT, total, _PAGE_LIMIT)))
 
     return [job for reqs in pages for job in _parse_reqs(reqs, host, site, company)]
+
+
+def probe_entry(url, page_html, slug, on_ats):
+    """Vanity domains proxy the UI but not /hcmRestApi — pin the real host."""
+    if on_ats:
+        return {}
+    host = urlparse(url).netloc.lower()
+    real = extract_oracle_host(page_html)
+    return {"host": real} if real and real != host else {}

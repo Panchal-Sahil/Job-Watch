@@ -9,7 +9,7 @@ import re
 from html import unescape
 from urllib.parse import urlparse
 
-from adapters.common import BROWSER_UA, HTTP, TIMEOUT
+from adapters.common import BROWSER_UA, HTTP, TIMEOUT, name_from_slug
 
 
 _ROW = re.compile(
@@ -48,3 +48,9 @@ def fetch_jobvite(board):
             "company": company,
         })
     return jobs
+
+
+def probe_entry(url, page_html, slug, on_ats):
+    """On jobs.jobvite.com the first path segment is the company."""
+    segs = [s for s in urlparse(url).path.split("/") if s]
+    return {"name": name_from_slug(segs[0])} if on_ats and segs else {}

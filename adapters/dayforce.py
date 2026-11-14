@@ -5,7 +5,7 @@ GET landing page (cookies) -> GET /api/auth/csrf -> POST search with X-CSRF-TOKE
 import re
 from urllib.parse import urlparse
 
-from adapters.common import BROWSER_UA, new_session, TIMEOUT
+from adapters.common import BROWSER_UA, new_session, TIMEOUT, name_from_slug
 
 PAGE_SIZE = 25
 
@@ -78,3 +78,11 @@ def fetch_dayforce(board):
         if not postings or start >= data.get("maxCount", 0):
             break
     return jobs
+
+
+def probe_entry(url, page_html, slug, on_ats):
+    """On jobs.dayforcehcm.com the namespace (first segment after the locale) names the company."""
+    segs = [s for s in urlparse(url).path.split("/") if s]
+    if segs and re.fullmatch(r"[a-z]{2}-[A-Z]{2}", segs[0]):
+        segs = segs[1:]
+    return {"name": name_from_slug(segs[0])} if on_ats and segs else {}

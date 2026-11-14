@@ -1,6 +1,8 @@
 """Gem ATS adapter."""
 
-from adapters.common import HEADERS, HTTP, TIMEOUT, _slug_from_url
+from urllib.parse import urlparse
+
+from adapters.common import HEADERS, HTTP, TIMEOUT, _slug_from_url, name_from_slug
 
 QUERY = """query JobBoardList($boardId: String!) {
   oatsExternalJobPostings(boardId: $boardId) {
@@ -42,3 +44,9 @@ def fetch_gem(board):
             "company": company,
         })
     return jobs
+
+
+def probe_entry(url, page_html, slug, on_ats):
+    """On jobs.gem.com the first path segment is the company."""
+    segs = [s for s in urlparse(url).path.split("/") if s]
+    return {"name": name_from_slug(segs[0])} if on_ats and segs else {}

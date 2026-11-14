@@ -2,13 +2,16 @@
 
 import time
 
-from adapters.common import HEADERS, HTTP, TIMEOUT, _slug_from_url
+from adapters.common import HEADERS, HTTP, TIMEOUT, _slug_from_url, pin_slug
+
+# Config field a white-labelled board pins its real slug in.
+SLUG_FIELD = "company"
 
 
 def fetch_lever(board):
     """Lever public postings API.
     URL like https://jobs.lever.co/<company>  ->  company."""
-    slug = _slug_from_url(board["url"], "company", board)
+    slug = _slug_from_url(board["url"], SLUG_FIELD, board)
     company = board.get("name", slug)
     api = f"https://api.lever.co/v0/postings/{slug}?mode=json"
     resp = HTTP.get(api, headers=HEADERS, timeout=TIMEOUT)
@@ -36,3 +39,7 @@ def fetch_lever(board):
             }
         )
     return jobs
+
+
+def probe_entry(url, page_html, slug, on_ats):
+    return pin_slug(SLUG_FIELD, slug, on_ats)

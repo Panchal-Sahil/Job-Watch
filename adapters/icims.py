@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from urllib.parse import parse_qsl, urlparse
 
-from adapters.common import BROWSER_UA, new_session, TIMEOUT
+from adapters.common import BROWSER_UA, new_session, TIMEOUT, name_from_slug
 
 _HOME_PAGE_SIZE = 100  # sent as `limit`; server default is 10
 
@@ -125,3 +125,11 @@ def fetch_icims(board):
         r.raise_for_status()
         jobs.extend(_parse_cards(r.text, namespace, company))
     return jobs
+
+
+def probe_entry(url, page_html, slug, on_ats):
+    """On *.icims.com the host label names the company (careers-acme -> Acme)."""
+    if not on_ats:
+        return {}
+    label = urlparse(url).netloc.lower().split(".")[0]
+    return {"name": name_from_slug(re.sub(r"^(?:careers|jobs)[a-z]*-", "", label))}

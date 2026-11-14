@@ -5,10 +5,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from adapters import ADAPTERS
 from probe.config_io import CONFIG_PATH, _append_to_config, _format_entry, _verify
 from probe.detect import probe
 from probe.input_parse import _collect_entries
-from probe.signatures import SUPPORTED_TYPES
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output" / "probe"
 
@@ -30,7 +30,7 @@ def _handle_one(url, name, do_add):
         print("  Try the actual job-board/iframe URL, or it may be a bespoke/JS-injected site.")
         return "unknown"
 
-    supported = res.type in SUPPORTED_TYPES
+    supported = res.type in ADAPTERS
     tag = "supported" if supported else "NO ADAPTER"
     print(f"  ATS:      {res.type}  [{tag}]   (confidence: {res.confidence})")
     print(f"  Evidence: {res.evidence}")

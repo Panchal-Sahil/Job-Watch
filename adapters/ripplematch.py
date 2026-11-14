@@ -3,8 +3,10 @@ display name, not the URL slug; without it the API returns millions of rows.
 """
 
 import html
+import re
+from urllib.parse import urlparse
 
-from adapters.common import BROWSER_UA, HTTP, TIMEOUT
+from adapters.common import BROWSER_UA, HTTP, TIMEOUT, name_from_slug
 
 API = "https://app.ripplematch.com/api/public/jobs/unified"
 
@@ -56,3 +58,19 @@ def fetch_ripplematch(board):
             break
         page += 1
     return jobs
+
+
+def probe_entry(url, page_html, slug, on_ats):
+    """Pin the exact display name the jobs API filters by, from the page title
+    (falling back to the titleized path slug) — as both name and company."""
+    name = None
+    for pat in (r'og:title"\s+content="[^"]*?[-–]\s*(.+?)\s*\|\s*RippleMatch',
+                r'<title[^>]*>[^<]*?[-–]\s*(.+?)\s*\|\s*RippleMatch'):
+        m = re.search(pat, page_html, re.I)
+        if m:
+            name = html.unescape(m.group(1)).strip()
+            break
+    if not name:
+        segs = [s for s in urlparse(url).path.split("/") if s]
+        name = name_from_slug(segs[-1]) if segs else None
+    return {"name": name, "company": name} if name else {}

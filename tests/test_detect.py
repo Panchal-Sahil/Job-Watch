@@ -2,8 +2,8 @@
 
 Pins each of the four detection paths (host match, embedded HTML signature, guessed
 slug, recognized-but-unsupported) plus the no-match case, and the helper edge cases
-(slug from path, generic-word stoplist). Also asserts the SUPPORTED_TYPES vs
-jobwatch.ADAPTERS invariant the module comment promises.
+(slug from path, generic-word stoplist). Also asserts every type probe can
+detect has an adapter registered.
 """
 
 import os
@@ -14,6 +14,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import probe
+from adapters import ADAPTERS
 from tests.fakehttp import FakeSession, page, api
 
 
@@ -145,7 +146,7 @@ class TestEmbeddedSignature(unittest.TestCase):
         self.assertEqual(res.type, "successfactors")
         self.assertIsNone(res.other)
         self.assertEqual(res.config["type"], "successfactors")
-        self.assertIn("successfactors", probe.SUPPORTED_TYPES)
+        self.assertIn("successfactors", ADAPTERS)
 
     def test_phenom_signature_no_confirmer(self):
         html = "<script>var phApp = {};</script>"
@@ -240,20 +241,165 @@ class TestUnsupportedAndUnknown(unittest.TestCase):
         self.assertIsNone(res.other)
 
 
+class TestConfigEntry(unittest.TestCase):
+    """The full config entry probe emits, key order included (_format_entry and
+    config.json's 2-line style depend on it). One case per per-type branch."""
+
+    def entry(self, url, rules, default=None):
+        return list(run_probe(url, rules, default=default).config.items())
+
+    def test_icims_name_strips_careers_prefix_from_host(self):
+        url = "https://careers-acme.icims.com/jobs/search"
+        self.assertEqual(self.entry(url, [("icims.com", page("<html></html>"))]),
+                         [("name", "Acme"), ("type", "icims"), ("url", url)])
+
+    def test_dayforce_name_from_first_path_segment_after_locale(self):
+        url = "https://jobs.dayforcehcm.com/en-US/acme-corp/CANDIDATEPORTAL"
+        self.assertEqual(self.entry(url, [("dayforcehcm.com", page("<html></html>"))]),
+                         [("name", "Acme Corp"), ("type", "dayforce"), ("url", url)])
+
+    def test_jobvite_on_ats_name_from_first_path_segment(self):
+        url = "https://jobs.jobvite.com/acme/jobs"
+        self.assertEqual(self.entry(url, [("jobs.jobvite.com", page("<html></html>"))]),
+                         [("name", "Acme"), ("type", "jobvite"), ("url", url)])
+
+    def test_jobvite_off_ats_name_from_host_labels(self):
+        # Type-specific name rules only apply on the ATS host — here the path
+        # segment is "jobs", which must not become the name.
+        url = "https://careers.acme.com/jobs"
+        html = '<span>Powered by Jobvite</span>'
+        self.assertEqual(self.entry(url, [("careers.acme.com", page(html))]),
+                         [("name", "Acme"), ("type", "jobvite"), ("url", url)])
+
+    def test_gem_name_from_first_path_segment(self):
+        url = "https://jobs.gem.com/acme-co"
+        self.assertEqual(self.entry(url, [("jobs.gem.com", page("<html></html>"))]),
+                         [("name", "Acme Co"), ("type", "gem"), ("url", url)])
+
+    def test_workday_on_ats_default_name_from_first_host_label(self):
+        url = "https://acme.wd1.myworkdayjobs.com/en-US/External"
+        self.assertEqual(self.entry(url, [("myworkdayjobs.com", page("<html></html>"))]),
+                         [("name", "Acme"), ("type", "workday"), ("url", url)])
+
+    def test_greenhouse_on_ats_uses_api_name_and_pins_no_token(self):
+        url = "https://job-boards.greenhouse.io/acmeco"
+        rules = [("job-boards.greenhouse.io/acmeco", page("<html></html>")),
+                 ("boards-api.greenhouse.io/v1/boards/acmeco/jobs", api({"jobs": [1]})),
+                 ("boards-api.greenhouse.io/v1/boards/acmeco", api({"name": "AcmeCo"}))]
+        self.assertEqual(self.entry(url, rules),
+                         [("name", "AcmeCo"), ("type", "greenhouse"), ("url", url)])
+
+    def test_greenhouse_on_ats_name_falls_back_to_slug(self):
+        url = "https://job-boards.greenhouse.io/acme-co"
+        rules = [("job-boards.greenhouse.io/acme-co", page("<html></html>")),
+                 ("boards-api.greenhouse.io/v1/boards/acme-co/jobs", api({"jobs": [1]}))]
+        self.assertEqual(self.entry(url, rules, default=api({}, status=404)),
+                         [("name", "Acme Co"), ("type", "greenhouse"), ("url", url)])
+
+    def test_greenhouse_whitelabel_pins_token(self):
+        url = "https://careers.example-corp.com"
+        rules = [("careers.example-corp.com",
+                  page('<a href="https://job-boards.greenhouse.io/hiddenco">Jobs</a>')),
+                 ("boards-api.greenhouse.io/v1/boards/hiddenco/jobs", api({"jobs": [1]})),
+                 ("boards-api.greenhouse.io/v1/boards/hiddenco", api({"name": "HiddenCo"}))]
+        self.assertEqual(self.entry(url, rules),
+                         [("name", "HiddenCo"), ("type", "greenhouse"),
+                          ("token", "hiddenco"), ("url", url)])
+
+    def test_lever_whitelabel_pins_company(self):
+        url = "https://careers.example-corp.com"
+        rules = [("careers.example-corp.com",
+                  page('<a href="https://jobs.lever.co/hiddenco">Jobs</a>')),
+                 ("api.lever.co/v0/postings/hiddenco", api([{"id": 1}]))]
+        self.assertEqual(self.entry(url, rules),
+                         [("name", "Example Corp"), ("type", "lever"),
+                          ("company", "hiddenco"), ("url", url)])
+
+    def test_ashby_whitelabel_pins_board(self):
+        url = "https://careers.example-corp.com"
+        rules = [("careers.example-corp.com",
+                  page('<a href="https://jobs.ashbyhq.com/hiddenco">Jobs</a>')),
+                 ("api.ashbyhq.com/posting-api/job-board/hiddenco", api({"jobs": [1]}))]
+        self.assertEqual(self.entry(url, rules),
+                         [("name", "Example Corp"), ("type", "ashby"),
+                          ("board", "hiddenco"), ("url", url)])
+
+    def test_guessed_lever_slug_is_pinned(self):
+        url = "https://careers.glider.com/openings"
+        rules = [("careers.glider.com", page("<html><title>Careers</title></html>")),
+                 ("api.lever.co/v0/postings/glider", api([{"id": 1}]))]
+        self.assertEqual(self.entry(url, rules, default=api({}, status=404)),
+                         [("name", "Glider"), ("type", "lever"),
+                          ("company", "glider"), ("url", url)])
+
+    def test_ripplematch_pins_title_name_as_name_and_company(self):
+        url = "https://app.ripplematch.com/v2/public/company/pan"
+        title = "<title>Careers - Palo Alto Networks | RippleMatch</title>"
+        self.assertEqual(self.entry(url, [("app.ripplematch.com", page(title))]),
+                         [("name", "Palo Alto Networks"), ("type", "ripplematch"),
+                          ("company", "Palo Alto Networks"), ("url", url)])
+
+    def test_ripplematch_without_title_falls_back_to_path_slug(self):
+        url = "https://app.ripplematch.com/v2/public/company/palo-alto"
+        self.assertEqual(self.entry(url, [("app.ripplematch.com", page("<html></html>"))]),
+                         [("name", "Palo Alto"), ("type", "ripplematch"),
+                          ("company", "Palo Alto"), ("url", url)])
+
+    def test_smartrecruiters_on_ats_pins_path_company(self):
+        # Name is the generic on-ATS default (first host label) — current behaviour.
+        url = "https://careers.smartrecruiters.com/AECOM2"
+        self.assertEqual(
+            self.entry(url, [("careers.smartrecruiters.com", page("<html></html>"))]),
+            [("name", "Careers"), ("type", "smartrecruiters"),
+             ("company", "AECOM2"), ("url", url)])
+
+    def test_smartrecruiters_vanity_pins_embedded_company(self):
+        url = "https://www.assent.com/company/careers/search/"
+        html = ('<script src="https://static.smartrecruiters.com/w.js"></script>'
+                '<script>widget({"company_code": "Assent"})</script>')
+        self.assertEqual(self.entry(url, [("www.assent.com", page(html))]),
+                         [("name", "Assent"), ("type", "smartrecruiters"),
+                          ("company", "Assent"), ("url", url)])
+
+    def test_smartrecruiters_vanity_without_company_pins_nothing(self):
+        url = "https://www.assent.com/careers/"
+        html = '<script src="https://static.smartrecruiters.com/w.js"></script>'
+        self.assertEqual(self.entry(url, [("www.assent.com", page(html))]),
+                         [("name", "Assent"), ("type", "smartrecruiters"), ("url", url)])
+
+    def test_oracle_vanity_pins_real_host(self):
+        url = "https://careers.oracle.com/en/sites/jobsearch/jobs"
+        html = '<a href="//eeho.fa.us2.oraclecloud.com/hcmUI">apply</a>'
+        self.assertEqual(self.entry(url, [("careers.oracle.com", page(html))]),
+                         [("name", "Oracle"), ("type", "oracle"),
+                          ("host", "eeho.fa.us2.oraclecloud.com"), ("url", url)])
+
+    def test_oracle_on_ats_pins_no_host(self):
+        url = "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1"
+        self.assertEqual(
+            self.entry(url, [("oraclecloud.com", page("/hcmUI/CandidateExperience"))]),
+            [("name", "Acme"), ("type", "oracle"), ("url", url)])
+
+
 class TestHelpers(unittest.TestCase):
     def test_path_slug_drops_locale(self):
         self.assertEqual(probe._path_slug("https://x.com/en-US/MyBoard"), "MyBoard")
 
-    def test_slug_candidates_skips_generic_words(self):
-        cands = probe._slug_candidates("https://www.careers.com/jobs", "<title>Jobs</title>")
-        for junk in ("www", "careers", "jobs", "com"):
-            self.assertNotIn(junk, cands)
+    def test_generic_words_are_never_guessed_as_slugs(self):
+        # Host labels and <title> are all stoplist words -> no slug-guess API calls.
+        url = "https://www.careers.com/jobs"
+        sess = FakeSession([("www.careers.com", page("<title>Jobs</title>"))],
+                           default=api({}, status=404))
+        with mock.patch.object(probe.requests, "Session", return_value=sess):
+            res = probe.probe(url)
+        self.assertIsNone(res.type)
+        self.assertEqual(sess.calls, [url])
 
 
 class TestInvariants(unittest.TestCase):
-    def test_supported_types_match_adapter_registry(self):
-        from jobwatch import ADAPTERS
-        self.assertEqual(probe.SUPPORTED_TYPES, set(ADAPTERS))
+    def test_every_detectable_type_has_an_adapter(self):
+        detectable = {t for t, *_ in probe.HOST_RULES + probe.HTML_SIGNATURES}
+        self.assertLessEqual(detectable, set(ADAPTERS))
 
 
 if __name__ == "__main__":
