@@ -7,6 +7,7 @@ import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime
 from itertools import zip_longest
 from pathlib import Path
@@ -144,57 +145,41 @@ def load_json(path, default):
     return default
 
 
-_DEFAULT_QUERY = None
+def make_fetcher(config):
+    """Build fetch_board(board) -> (name, jobs, error) from a loaded config.
 
+    Also applies the config's process-wide adapter knobs (`request_delay_scale`,
+    `workday_pod_limit`, both required). Call it once, before any fetch: Workday's
+    per-pod semaphores capture POD_LIMIT the first time each pod is used.
 
-def _default_query_terms():
-    """Early-careers search terms from config, cached. Also used by probe --add."""
-    global _DEFAULT_QUERY
-    if _DEFAULT_QUERY is None:
-        _DEFAULT_QUERY = load_json(CONFIG_PATH, {}).get("query_terms", [])
-    return _DEFAULT_QUERY
+    The returned fetch_board never raises, and fills config-level defaults into the
+    board dict: `query` (from `query_terms`), `resolve_multi_location`, `title_ok`.
+    """
+    common.DELAY_SCALE = config["request_delay_scale"]
+    workday_mod.POD_LIMIT = config["workday_pod_limit"]
 
-
-_RESOLVE_MULTI_LOC = None
-
-
-def _resolve_multi_location():
-    """Whether to resolve placeholder locations ("2 Locations") via detail endpoint."""
-    global _RESOLVE_MULTI_LOC
-    if _RESOLVE_MULTI_LOC is None:
-        _RESOLVE_MULTI_LOC = bool(load_json(CONFIG_PATH, {}).get("resolve_multi_location", False))
-    return _RESOLVE_MULTI_LOC
-
-
-_FILTERS = None
-
-
-def _filters():
-    global _FILTERS
-    if _FILTERS is None:
-        _FILTERS = load_json(CONFIG_PATH, {}).get("filters", {})
-    return _FILTERS
-
-
-def fetch_board(board):
-    """Fetch one board. Returns (name, jobs, error) — never raises."""
-    name = board.get("name", board.get("url", "?"))
-    kind = board.get("type", "workday")
-    adapter = ADAPTERS.get(kind)
-    if not adapter:
-        return name, [], f"no adapter for type '{kind}'"
-    if "query" not in board and _default_query_terms():
-        board = {**board, "query": _default_query_terms()}
-    if "resolve_multi_location" not in board and _resolve_multi_location():
-        board = {**board, "resolve_multi_location": True}
+    defaults = {}
+    if config.get("query_terms"):
+        defaults["query"] = config["query_terms"]
+    if config.get("resolve_multi_location"):
+        defaults["resolve_multi_location"] = True
+    filters = config.get("filters", {})
     # Advisory hint: ignoring it is always correct — matches() still runs in
     # full, so this can only skip work, never surface a wrong job.
-    if "title_ok" not in board:
-        board = {**board, "title_ok": lambda t: _title_matches(t, _filters())}
-    try:
-        return name, adapter(board), None
-    except Exception as e:
-        return name, [], str(e)
+    defaults["title_ok"] = lambda t: _title_matches(t, filters)
+
+    def fetch_board(board):
+        name = board.get("name", board.get("url", "?"))
+        kind = board.get("type", "workday")
+        adapter = ADAPTERS.get(kind)
+        if not adapter:
+            return name, [], f"no adapter for type '{kind}'"
+        try:
+            return name, adapter({**defaults, **board}), None
+        except Exception as e:
+            return name, [], str(e)
+
+    return fetch_board
 
 
 # Rough seconds per board by type, measured on a full run. Only the ordering matters.
@@ -224,12 +209,6 @@ def _schedule(boards):
     return [b for rnd in zip_longest(*order) for b in rnd if b is not None]
 
 
-def _timed(board):
-    """fetch_board plus its wall time, for the progress line."""
-    start = time.monotonic()
-    return fetch_board(board), time.monotonic() - start
-
-
 def _short_error(error, width=140):
     # Head+tail: urllib3 puts host at front, cause at back.
     text = " ".join(str(error).split())
@@ -243,8 +222,71 @@ def _parse_args():
     p = argparse.ArgumentParser(description="Poll ATS boards and print new matching jobs.")
     p.add_argument("--board", "-b", help="Only fetch boards whose name contains this string (case-insensitive)")
     p.add_argument("--type", "-t", help="Only fetch boards of this ATS type (e.g. greenhouse, workday)")
-    p.add_argument("--raw", action="store_true", help="Skip filtering — show all jobs, not just matches")
+    p.add_argument("--raw", action="store_true", help="Skip filtering — show all unseen jobs, not just matches; doesn't update seen.json")
     return p.parse_args()
+
+
+@dataclass
+class RunResult:
+    new_jobs: list   # unseen jobs to show, sorted by (company, title)
+    failed: list     # [(board name, error)], sorted
+    seen: set        # seen ids to persist after this run
+
+
+def run(boards, fetch, seen, filters, *, workers, raw=False, on_board=None):
+    """Fetch every board concurrently, then diff against `seen` and filter.
+
+    A job is new if its id is in neither `seen` nor earlier in this run. A normal
+    run shows new jobs that pass `filters` and marks only those seen — so loosening
+    a filter later still surfaces what it used to hide. `raw` shows every new job
+    and marks nothing seen: it's a read-only look. `seen` itself is not mutated.
+
+    `on_board(done, total, name, elapsed, jobs, error)` is called per board as it
+    completes, from the calling thread.
+    """
+    def timed(board):
+        start = time.monotonic()
+        return fetch(board), time.monotonic() - start
+
+    results = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(timed, b) for b in _schedule(boards)]
+        for done, fut in enumerate(as_completed(futures), 1):
+            (name, jobs, error), elapsed = fut.result()
+            results.append((name, jobs, error))
+            if on_board:
+                on_board(done, len(futures), name, elapsed, jobs, error)
+
+    # Diff + filter sequentially — keeps `seen` mutation single-threaded.
+    seen_after, shown, new_jobs, failed = set(seen), set(), [], []
+    for name, jobs, error in results:
+        if error:
+            failed.append((name, error))
+            continue
+        for job in jobs:
+            if job["id"] in seen or job["id"] in shown:
+                continue
+            if raw or matches(job, filters):
+                shown.add(job["id"])
+                new_jobs.append(job)
+                if not raw:
+                    seen_after.add(job["id"])
+
+    new_jobs.sort(key=lambda j: (j["company"], j["title"]))
+    return RunResult(new_jobs=new_jobs, failed=sorted(failed), seen=seen_after)
+
+
+def report_lines(result):
+    """The new-jobs block, unindented. Shared by stdout and the saved log."""
+    if not result.new_jobs:
+        return ["No new matching jobs."]
+    lines = [f"{len(result.new_jobs)} new matching job(s):", ""]
+    for job in result.new_jobs:
+        lines += [f"• {job['title']}",
+                  f"    {job['company']} — {job['location']}  ({job['posted']})",
+                  f"    {job['url']}",
+                  ""]
+    return lines
 
 
 def main():
@@ -255,11 +297,9 @@ def main():
 
     args = _parse_args()
     config = load_json(CONFIG_PATH, {})
-    filters = config.get("filters", {})
     boards = config.get("boards", [])
     workers = config["max_workers"]
-    common.DELAY_SCALE = config["request_delay_scale"]
-    workday_mod.POD_LIMIT = config["workday_pod_limit"]
+    fetch = make_fetcher(config)
     seen = set(load_json(SEEN_PATH, []))
 
     if args.board:
@@ -272,42 +312,30 @@ def main():
     if not boards:
         sys.exit("No boards matched the filter.")
 
+    def progress(done, total, name, elapsed, jobs, error):
+        status = f"{len(jobs)} jobs" if error is None else f"ERROR: {_short_error(error)}"
+        print(f"  [{done:2}/{total}] {name:32} {elapsed:5.1f}s  {status}", flush=True)
+
     total = len(boards)
     print(f"Fetching {total} board(s) (up to {workers} at a time)...", flush=True)
-    results = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(_timed, b) for b in _schedule(boards)]
-        for done, fut in enumerate(as_completed(futures), 1):
-            (name, jobs, error), elapsed = fut.result()
-            results.append((name, jobs, error))
-            status = (f"{len(jobs)} jobs" if error is None
-                      else f"ERROR: {_short_error(error)}")
-            print(f"  [{done:2}/{total}] {name:32} {elapsed:5.1f}s  {status}", flush=True)
+    result = run(boards, fetch, seen, config.get("filters", {}),
+                 workers=workers, raw=args.raw, on_board=progress)
 
-    # Diff + filter sequentially — keeps `seen` mutation single-threaded.
-    new_jobs = []
-    failed = []
-    for name, jobs, error in results:
-        if error:
-            failed.append((name, error))
-            print(f"  ! {name}: {error}", file=sys.stderr)
-            continue
-        for job in jobs:
-            if job["id"] in seen:
-                continue
-            if args.raw or matches(job, filters):
-                seen.add(job["id"])
-                new_jobs.append(job)
-
+    for name, error in result.failed:
+        print(f"  ! {name}: {error}", file=sys.stderr)
     # Restate failures on stdout — stderr goes elsewhere in a redirected run.
-    if failed:
-        print(f"\n  {len(failed)} board(s) failed: {', '.join(sorted(n for n, _ in failed))}")
+    if result.failed:
+        print(f"\n  {len(result.failed)} board(s) failed: "
+              f"{', '.join(n for n, _ in result.failed)}")
+
+    body = report_lines(result)
+    print()
+    for line in body:
+        print(f"  {line}" if line else "")
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     out_path = OUTPUT_DIR / f"jobwatch-{stamp}.out"
-
-    lines = []
 
     flag_parts = []
     if args.board:
@@ -316,31 +344,16 @@ def main():
         flag_parts.append(f"--type {args.type}")
     if args.raw:
         flag_parts.append("--raw")
-    lines.append(f"Run: {stamp}  |  Boards: {total}  |  Flags: {', '.join(flag_parts) or 'none'}")
-    if failed:
-        lines.append(f"\n{len(failed)} board(s) failed:")
-        for name, error in sorted(failed):
-            lines.append(f"  ! {name}: {error}")
-    lines.append("")
-
-    if new_jobs:
-        print(f"\n  {len(new_jobs)} new matching job(s):\n")
-        lines.append(f"{len(new_jobs)} new matching job(s):\n")
-        for job in sorted(new_jobs, key=lambda j: (j["company"], j["title"])):
-            print(f"  • {job['title']}")
-            print(f"      {job['company']} — {job['location']}  ({job['posted']})")
-            print(f"      {job['url']}\n")
-            lines.append(f"• {job['title']}")
-            lines.append(f"    {job['company']} — {job['location']}  ({job['posted']})")
-            lines.append(f"    {job['url']}\n")
-    else:
-        print("  No new matching jobs.")
-        lines.append("No new matching jobs.")
+    lines = [f"Run: {stamp}  |  Boards: {total}  |  Flags: {', '.join(flag_parts) or 'none'}"]
+    if result.failed:
+        lines.append(f"\n{len(result.failed)} board(s) failed:")
+        lines += [f"  ! {name}: {error}" for name, error in result.failed]
+    lines += [""] + body
 
     out_path.write_text("\n".join(lines) + "\n")
     print(f"  Saved to {out_path.relative_to(HERE)}")
 
-    SEEN_PATH.write_text(json.dumps(sorted(seen), indent=0))
+    SEEN_PATH.write_text(json.dumps(sorted(result.seen), indent=0))
 
 
 if __name__ == "__main__":

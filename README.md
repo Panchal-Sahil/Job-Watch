@@ -80,7 +80,7 @@ python3 jobwatch.py                          # poll all boards
 python3 jobwatch.py --board Akamai           # only boards matching "Akamai" (name or URL)
 python3 jobwatch.py --type oracle            # only Oracle boards
 python3 jobwatch.py --board Palo --type radancy  # combine both
-python3 jobwatch.py --board Akamai --raw     # skip filtering, show every job
+python3 jobwatch.py --board Akamai --raw     # skip filtering, show every job (seen.json untouched)
 ```
 
 ## Identifying a board's ATS (`probe.py`)

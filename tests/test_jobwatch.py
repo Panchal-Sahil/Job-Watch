@@ -240,22 +240,27 @@ class TestSchedule(unittest.TestCase):
         self.assertEqual(wd[:6], ["wd5.myworkdayjobs.com", "wd1.myworkdayjobs.com"] * 3)
 
 
-class TestFetchBoard(unittest.TestCase):
+CONFIG = {"filters": FILTERS, "query_terms": ["intern"], "resolve_multi_location": True,
+          "request_delay_scale": 0.2, "workday_pod_limit": 6}
+
+
+class TestMakeFetcher(unittest.TestCase):
+    """fetch_board is built from a config value, so these tests hand it one directly
+    instead of patching module globals."""
+
     def setUp(self):
-        # fetch_board reads config through cached module globals; pin them so these
-        # tests don't depend on the live config.json.
-        for attr, value in (("_FILTERS", FILTERS), ("_DEFAULT_QUERY", ["intern"]),
-                            ("_RESOLVE_MULTI_LOC", True)):
-            patcher = mock.patch.object(jobwatch, attr, value)
+        # make_fetcher applies the runtime knobs; restore them after each test.
+        for module, attr in ((common, "DELAY_SCALE"), (jobwatch.workday_mod, "POD_LIMIT")):
+            patcher = mock.patch.object(module, attr, getattr(module, attr))
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def _capture(self, board):
+    def _capture(self, board, config=CONFIG):
         """Register a fake adapter that records the board dict it was handed."""
         seen = {}
         with mock.patch.dict(jobwatch.ADAPTERS,
                              {"fake": lambda b: seen.update(b) or []}):
-            name, jobs, error = jobwatch.fetch_board({**board, "type": "fake"})
+            name, jobs, error = jobwatch.make_fetcher(config)({**board, "type": "fake"})
         self.assertIsNone(error)
         return seen
 
@@ -270,14 +275,31 @@ class TestFetchBoard(unittest.TestCase):
         self.assertEqual(got["query"], ["intern"])
         self.assertTrue(got["resolve_multi_location"])
 
+    def test_optional_knobs_absent_inject_nothing(self):
+        got = self._capture({"name": "Acme", "url": "https://x"},
+                            {"request_delay_scale": 0, "workday_pod_limit": 1})
+        self.assertNotIn("query", got)
+        self.assertNotIn("resolve_multi_location", got)
+        self.assertTrue(got["title_ok"]("Anything At All"))
+
     def test_board_overrides_are_preserved(self):
         got = self._capture({"name": "Acme", "url": "https://x", "query": ["phd"],
                              "resolve_multi_location": False})
         self.assertEqual(got["query"], ["phd"])
         self.assertFalse(got["resolve_multi_location"])
 
+    def test_applies_runtime_knobs(self):
+        jobwatch.make_fetcher({**CONFIG, "request_delay_scale": 0.7, "workday_pod_limit": 3})
+        self.assertEqual(common.DELAY_SCALE, 0.7)
+        self.assertEqual(jobwatch.workday_mod.POD_LIMIT, 3)
+
+    def test_missing_required_knob_fails_loud(self):
+        with self.assertRaises(KeyError):
+            jobwatch.make_fetcher({"filters": FILTERS})
+
     def test_unknown_type_returns_error_not_raise(self):
-        name, jobs, error = jobwatch.fetch_board({"name": "Acme", "type": "nope"})
+        fetch = jobwatch.make_fetcher(CONFIG)
+        name, jobs, error = fetch({"name": "Acme", "type": "nope"})
         self.assertEqual(jobs, [])
         self.assertIn("no adapter", error)
 
@@ -286,9 +308,104 @@ class TestFetchBoard(unittest.TestCase):
             raise ValueError("kaboom")
 
         with mock.patch.dict(jobwatch.ADAPTERS, {"fake": boom}):
-            name, jobs, error = jobwatch.fetch_board({"name": "Acme", "type": "fake"})
+            fetch = jobwatch.make_fetcher(CONFIG)
+            name, jobs, error = fetch({"name": "Acme", "type": "fake"})
         self.assertEqual(jobs, [])
         self.assertEqual(error, "kaboom")
+
+
+def posting(jid, title="Software Intern", location="Toronto, ON", company="Acme"):
+    return {"id": jid, "title": title, "location": location,
+            "posted": "2026-11-01", "url": f"https://x/{jid}", "company": company}
+
+
+class TestRun(unittest.TestCase):
+    """run() is fetch + diff against seen + filter. The fetcher is injected, so each
+    test scripts what every board "returns" and asserts on the RunResult."""
+
+    def _run(self, responses, seen=(), raw=False, filters=FILTERS):
+        """responses: {board name: list of jobs, or an error string}."""
+        def fetch(board):
+            got = responses[board["name"]]
+            return (board["name"], [], got) if isinstance(got, str) else (board["name"], got, None)
+
+        boards = [{"name": n, "type": "greenhouse", "url": "https://x"} for n in responses]
+        return jobwatch.run(boards, fetch, set(seen), filters, workers=2, raw=raw)
+
+    def test_new_match_is_shown_and_marked_seen(self):
+        res = self._run({"Acme": [posting("a:1")]})
+        self.assertEqual([j["id"] for j in res.new_jobs], ["a:1"])
+        self.assertEqual(res.seen, {"a:1"})
+
+    def test_already_seen_job_is_not_shown_again(self):
+        res = self._run({"Acme": [posting("a:1"), posting("a:2")]}, seen={"a:1"})
+        self.assertEqual([j["id"] for j in res.new_jobs], ["a:2"])
+        self.assertEqual(res.seen, {"a:1", "a:2"})
+
+    def test_non_match_is_not_marked_seen(self):
+        """Loosening a filter later must still surface jobs it used to hide."""
+        res = self._run({"Acme": [posting("a:1", title="Marketing Manager")]})
+        self.assertEqual(res.new_jobs, [])
+        self.assertEqual(res.seen, set())
+
+    def test_raw_shows_everything_but_marks_nothing_seen(self):
+        """--raw is a read-only look: the next normal run must still show matches."""
+        jobs = [posting("a:1"), posting("a:2", title="Marketing Manager")]
+        res = self._run({"Acme": jobs}, seen={"old"}, raw=True)
+        self.assertEqual({j["id"] for j in res.new_jobs}, {"a:1", "a:2"})
+        self.assertEqual(res.seen, {"old"})
+
+    def test_raw_still_hides_already_seen(self):
+        res = self._run({"Acme": [posting("a:1"), posting("a:2")]}, seen={"a:1"}, raw=True)
+        self.assertEqual([j["id"] for j in res.new_jobs], ["a:2"])
+
+    def test_duplicate_id_in_one_run_is_shown_once(self):
+        for raw in (False, True):
+            with self.subTest(raw=raw):
+                res = self._run({"A": [posting("dup")], "B": [posting("dup")]}, raw=raw)
+                self.assertEqual(len(res.new_jobs), 1)
+
+    def test_failed_board_is_reported_and_others_still_count(self):
+        res = self._run({"Bad": "HTTP 500", "Good": [posting("g:1")]})
+        self.assertEqual(res.failed, [("Bad", "HTTP 500")])
+        self.assertEqual([j["id"] for j in res.new_jobs], ["g:1"])
+
+    def test_input_seen_is_not_mutated(self):
+        seen = {"old"}
+        jobwatch.run([{"name": "A", "type": "greenhouse", "url": "https://x"}],
+                     lambda b: ("A", [posting("a:1")], None), seen, FILTERS, workers=1)
+        self.assertEqual(seen, {"old"})
+
+    def test_new_jobs_sorted_by_company_then_title(self):
+        res = self._run({"A": [posting("1", "Software Intern", company="Zed"),
+                               posting("2", "Software Co-op", company="Acme"),
+                               posting("3", "Data Intern", company="Acme")]})
+        self.assertEqual([j["id"] for j in res.new_jobs], ["3", "2", "1"])
+
+    def test_on_board_reports_every_board(self):
+        calls = []
+        boards = [{"name": n, "type": "greenhouse", "url": "https://x"} for n in "ABC"]
+        jobwatch.run(boards, lambda b: (b["name"], [], None), set(), FILTERS, workers=2,
+                     on_board=lambda done, total, name, *_: calls.append((done, total, name)))
+        self.assertEqual(sorted(c[0] for c in calls), [1, 2, 3])
+        self.assertEqual({c[2] for c in calls}, set("ABC"))
+        self.assertTrue(all(c[1] == 3 for c in calls))
+
+
+class TestReportLines(unittest.TestCase):
+    """One renderer feeds both stdout (indented) and the saved .out log."""
+
+    def test_lists_each_job(self):
+        res = jobwatch.RunResult(new_jobs=[posting("a:1")], failed=[], seen=set())
+        lines = jobwatch.report_lines(res)
+        self.assertEqual(lines[0], "1 new matching job(s):")
+        self.assertIn("• Software Intern", lines)
+        self.assertIn("    Acme — Toronto, ON  (2026-11-01)", lines)
+        self.assertIn("    https://x/a:1", lines)
+
+    def test_no_jobs(self):
+        res = jobwatch.RunResult(new_jobs=[], failed=[], seen=set())
+        self.assertEqual(jobwatch.report_lines(res), ["No new matching jobs."])
 
 
 if __name__ == "__main__":
