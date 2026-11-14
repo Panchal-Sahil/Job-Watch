@@ -309,17 +309,22 @@ probe reports a system as `[NOT SUPPORTED — no adapter]` and you want it. The 
    or `adapters/greenhouse.py` are ~30 lines and the clearest. Shared helpers
    (`HEADERS`, `BROWSER_UA`, `_slug_from_url`) live in `adapters/common.py`.
 
-2. **Register it in `jobwatch.py`**: add an import at the top and a line in the `ADAPTERS`
-   dict (`"<name>": fetch_<name>`).
+   If probe needs more than `name`, `type` and `url` to write a working config entry
+   for this system — a pinned field like a real API host, or a better display name
+   than the host gives — add an optional `probe_entry(url, page_html, slug, on_ats)`
+   to the same file. It returns the fields to pin. The contract is in
+   `adapters/__init__.py`, and `adapters/oracle.py` is a short example.
+
+2. **Register it in `adapters/__init__.py`**: add an import and a line in the `ADAPTERS`
+   dict (`"<name>": fetch_<name>`). Both jobwatch and probe read this one registry.
 
 3. **Teach probe to recognize it** in `probe/signatures.py`: add a row to `HOST_RULES`
-   (if it has its own domain) and/or `HTML_SIGNATURES` (if it's embedded in company pages),
-   and add the name to `SUPPORTED_TYPES`. For Greenhouse/Lever/Ashby-style boards that need
-   an API double-check, add a confirmer in `probe/confirm.py`.
+   (if it has its own domain) and/or `HTML_SIGNATURES` (if it's embedded in company pages).
+   For Greenhouse/Lever/Ashby-style boards that need an API double-check, add a confirmer
+   in `probe/confirm.py`.
 
-4. **Run the tests** (`python3 -m unittest discover -s tests`). One test asserts that
-   `SUPPORTED_TYPES` and the adapter registry stay in sync, so it'll catch a half-finished
-   addition.
+4. **Run the tests** (`python3 -m unittest discover -s tests`). One test checks that every
+   type probe can detect has a registered adapter, so it'll catch a half-finished addition.
 
 ---
 

@@ -186,13 +186,16 @@ desktop/email/Discord notifications.
 
 Each ATS adapter reads a JSON API or scrapes HTML and returns a list of jobs.
 Add `adapters/<name>.py` with a `fetch_<name>(board)` that returns the normalized
-job dict (`id, title, location, posted, url, company`), then import it into
-`jobwatch.py` and register it in the `ADAPTERS` dict. Add detection rows in
-`probe/signatures.py` (`HOST_RULES` / `HTML_SIGNATURES` / `SUPPORTED_TYPES`),
-and optionally a confirmer in `probe/confirm.py`. Run the tests — one enforces
-that `SUPPORTED_TYPES` stays in sync with `ADAPTERS`. Shared helpers (`HTTP`,
-`HEADERS`, `BROWSER_UA`, `TIMEOUT`, `new_session`, `polite_sleep`,
-`_slug_from_url`) live in `adapters/common.py`.
+job dict (`id, title, location, posted, url, company`), then register it in the
+`ADAPTERS` dict in `adapters/__init__.py`. If probe needs to pin extra config
+fields for this type (or guess a better display name), define an optional
+`probe_entry(url, page_html, slug, on_ats)` in the same module (contract in
+`adapters/__init__.py`). Add detection rows in `probe/signatures.py`
+(`HOST_RULES` / `HTML_SIGNATURES`), and optionally a confirmer in
+`probe/confirm.py`. Run the tests — one checks every detectable type has an
+adapter. Shared helpers (`HTTP`, `HEADERS`, `BROWSER_UA`, `TIMEOUT`,
+`new_session`, `polite_sleep`, `_slug_from_url`, `name_from_slug`, `pin_slug`)
+live in `adapters/common.py`.
 
 Before optimizing an adapter's paging, read
 [docs/optimization-plan.md](docs/optimization-plan.md): where a run's time goes,
