@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 
+from adapters import ADAPTERS
+
 HERE = Path(__file__).resolve().parent.parent
 CONFIG_PATH = HERE / "config.json"
 
@@ -18,7 +20,6 @@ def _format_entry(entry):
 def _append_to_config(entry):
     """Insert into the board's type group in canonical adapter order.
     Returns (group_label, count_of_type)."""
-    from jobwatch import ADAPTERS
     order = list(ADAPTERS)
     rank = lambda t: order.index(t) if t in order else len(order)
 

@@ -2,8 +2,8 @@
 
 Pins each of the four detection paths (host match, embedded HTML signature, guessed
 slug, recognized-but-unsupported) plus the no-match case, and the helper edge cases
-(slug from path, generic-word stoplist). Also asserts the SUPPORTED_TYPES vs
-jobwatch.ADAPTERS invariant the module comment promises.
+(slug from path, generic-word stoplist). Also asserts every type probe can
+detect has an adapter registered.
 """
 
 import os
@@ -14,6 +14,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import probe
+from adapters import ADAPTERS
 from tests.fakehttp import FakeSession, page, api
 
 
@@ -145,7 +146,7 @@ class TestEmbeddedSignature(unittest.TestCase):
         self.assertEqual(res.type, "successfactors")
         self.assertIsNone(res.other)
         self.assertEqual(res.config["type"], "successfactors")
-        self.assertIn("successfactors", probe.SUPPORTED_TYPES)
+        self.assertIn("successfactors", ADAPTERS)
 
     def test_phenom_signature_no_confirmer(self):
         html = "<script>var phApp = {};</script>"
@@ -391,9 +392,9 @@ class TestHelpers(unittest.TestCase):
 
 
 class TestInvariants(unittest.TestCase):
-    def test_supported_types_match_adapter_registry(self):
-        from jobwatch import ADAPTERS
-        self.assertEqual(probe.SUPPORTED_TYPES, set(ADAPTERS))
+    def test_every_detectable_type_has_an_adapter(self):
+        detectable = {t for t, *_ in probe.HOST_RULES + probe.HTML_SIGNATURES}
+        self.assertLessEqual(detectable, set(ADAPTERS))
 
 
 if __name__ == "__main__":

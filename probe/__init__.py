@@ -21,7 +21,6 @@ from probe.signatures import (
     HTML_SIGNATURES,
     OTHER_ATS,
     OVERRIDE_FIELD,
-    SUPPORTED_TYPES,
 )
 
-__all__ = ["probe", "main", "DetectionResult", "SUPPORTED_TYPES"]
+__all__ = ["probe", "main", "DetectionResult"]

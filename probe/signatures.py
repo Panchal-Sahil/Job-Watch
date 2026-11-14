@@ -1,13 +1,5 @@
 """ATS detection signature tables — adding a new ATS is mostly adding rows here."""
 
-# Must stay in sync with jobwatch.ADAPTERS (a test enforces this).
-SUPPORTED_TYPES = {
-    "workday", "greenhouse", "lever", "ashby", "phenom", "successfactors",
-    "oracle", "radancy", "smartrecruiters", "bamboohr", "rippling", "ripplematch",
-    "ukg", "dayforce", "icims", "eightfold", "jazzhr", "jobvite", "avature", "gem",
-    "workable", "yello", "zohorecruit",
-}
-
 # (type, host-regex). High confidence — the URL *is* the ATS.
 HOST_RULES = [
     ("workday", r"\.myworkdayjobs\.com$|\.myworkdaysite\.com$"),
