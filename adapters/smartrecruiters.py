@@ -20,7 +20,7 @@ _SR_HOST_RE = re.compile(r"(^|\.)(careers|jobs)\.smartrecruiters\.com$", re.I)
 
 
 def extract_smartrecruiters_company(html):
-    """Real company id from a vanity page, or None. Shared with probe."""
+    """Real company id from a vanity page, or None."""
     for pat in _SR_COMPANY_RES:
         m = pat.search(html or "")
         if m:
@@ -88,3 +88,14 @@ def fetch_smartrecruiters(board):
             break
         polite_sleep(0.3)
     return jobs
+
+
+def probe_entry(url, page_html, slug, on_ats):
+    """Pin the company id: the first path segment on the ATS host; on a vanity
+    domain that segment is meaningless, so take the id embedded in the page."""
+    if on_ats:
+        segs = [s for s in urlparse(url).path.split("/") if s]
+        company = segs[0] if segs else None
+    else:
+        company = extract_smartrecruiters_company(page_html)
+    return {"company": company} if company else {}

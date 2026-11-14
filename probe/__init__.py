@@ -8,7 +8,6 @@ from probe.detect import (
     _augment_name,
     _build_config,
     _confirm_and_build,
-    _guess_name,
     _host_matches,
     _path_slug,
     _slug_candidates,
@@ -20,7 +19,6 @@ from probe.signatures import (
     HOST_RULES,
     HTML_SIGNATURES,
     OTHER_ATS,
-    OVERRIDE_FIELD,
 )
 
 __all__ = ["probe", "main", "DetectionResult"]

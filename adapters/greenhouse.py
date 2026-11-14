@@ -1,12 +1,15 @@
 """Greenhouse ATS adapter."""
 
-from adapters.common import HEADERS, HTTP, TIMEOUT, _slug_from_url
+from adapters.common import HEADERS, HTTP, TIMEOUT, _slug_from_url, pin_slug
+
+# Config field a white-labelled board pins its real slug in.
+SLUG_FIELD = "token"
 
 
 def fetch_greenhouse(board):
     """Greenhouse public board API.
     URL like https://job-boards.greenhouse.io/<token>  ->  token."""
-    token = _slug_from_url(board["url"], "token", board)
+    token = _slug_from_url(board["url"], SLUG_FIELD, board)
     company = board.get("name", token)
     api = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs"
     resp = HTTP.get(api, headers=HEADERS, timeout=TIMEOUT)
@@ -24,3 +27,7 @@ def fetch_greenhouse(board):
             }
         )
     return jobs
+
+
+def probe_entry(url, page_html, slug, on_ats):
+    return pin_slug(SLUG_FIELD, slug, on_ats)

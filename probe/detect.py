@@ -1,15 +1,16 @@
 """The detection pipeline: probe(url) and its slug/name/config helpers."""
 
 import re
-from html import unescape
+import sys
 from urllib.parse import urlparse
 
 import requests
 
-from adapters.common import BROWSER_UA
+from adapters import ADAPTERS
+from adapters.common import BROWSER_UA, name_from_slug
 from probe.confirm import CONFIRMERS, _greenhouse_name
 from probe.result import DetectionResult
-from probe.signatures import HOST_RULES, HTML_SIGNATURES, OTHER_ATS, OVERRIDE_FIELD
+from probe.signatures import HOST_RULES, HTML_SIGNATURES, OTHER_ATS
 
 
 def _slug_candidates(url, html):
@@ -53,17 +54,6 @@ def _path_slug(url):
     if segs and re.fullmatch(r"[a-z]{2}-[A-Z]{2}", segs[0]):
         segs = segs[1:]
     return segs[-1] if segs else None
-
-
-def _ripplematch_name(page_html, url):
-    """RippleMatch's exact company display name from page title or og:title."""
-    for pat in (r'og:title"\s+content="[^"]*?[-–]\s*(.+?)\s*\|\s*RippleMatch',
-                r'<title[^>]*>[^<]*?[-–]\s*(.+?)\s*\|\s*RippleMatch'):
-        m = re.search(pat, page_html, re.I)
-        if m:
-            return unescape(m.group(1)).strip()
-    slug = _path_slug(url)
-    return slug.replace("-", " ").title() if slug else None
 
 
 def probe(url):
@@ -156,8 +146,6 @@ def _confirm_and_build(sess, res, url, html):
                     res.job_count = n
                     res.evidence += f" — slug '{cand}' confirmed via API ({n} jobs)"
                     break
-    if atype == "ripplematch" and not res.api_name:
-        res.api_name = _ripplematch_name(html, url)
     _augment_name(sess, res)
     _build_config(res, url, res.slug, html)
 
@@ -176,73 +164,28 @@ def _augment_name(sess, res):
 def _build_config(res, url, slug, html=""):
     """Attach a ready-to-paste config.json board entry to res."""
     atype = res.type
-    name = res.name or res.api_name or _guess_name(url, atype, slug)
-    entry = {"name": name, "type": atype}
-
-    if atype in OVERRIDE_FIELD and slug:
-        host = urlparse(url).netloc.lower()
-        on_ats = any(_host_matches(host, p) for t, p in HOST_RULES if t == atype)
-        if on_ats:
-            entry["url"] = url
-        else:
-            entry[OVERRIDE_FIELD[atype]] = slug
-            entry["url"] = url
-    elif atype == "smartrecruiters":
-        # Vanity domains carry a meaningless path segment — pin the real company id.
-        host = urlparse(url).netloc.lower()
-        on_ats = any(_host_matches(host, p) for t, p in HOST_RULES if t == atype)
-        segs = [s for s in urlparse(url).path.split("/") if s]
-        if on_ats:
-            if segs:
-                entry["company"] = segs[0]
-        else:
-            from adapters.smartrecruiters import extract_smartrecruiters_company
-            real = extract_smartrecruiters_company(html)
-            if real:
-                entry["company"] = real
-        entry["url"] = url
-    elif atype == "oracle":
-        # Vanity domains proxy the UI but not /hcmRestApi — pin the real host.
-        host = urlparse(url).netloc.lower()
-        if not host.endswith(".oraclecloud.com"):
-            from adapters.oracle import extract_oracle_host
-            real = extract_oracle_host(html)
-            if real and real != host:
-                entry["host"] = real
-        entry["url"] = url
-    elif atype == "ripplematch":
-        entry["company"] = res.api_name or name
-        entry["url"] = url
-    else:
-        entry["url"] = url
-
-    res.config = entry
-
-
-def _guess_name(url, atype=None, slug=None):
-    """Best-effort display name (user can override with --name)."""
     host = urlparse(url).netloc.lower()
-    on_ats = atype and any(_host_matches(host, p) for t, p in HOST_RULES if t == atype)
+    on_ats = any(_host_matches(host, p) for t, p in HOST_RULES if t == atype)
+    fields = _adapter_fields(atype, url, html, slug, on_ats)
+    guess = fields.pop("name", None)  # a guess: an API-provided name beats it
+    name = res.name or res.api_name or guess or _default_name(host, on_ats)
+    res.config = {"name": name, "type": atype, **fields, "url": url}
+
+
+def _adapter_fields(atype, url, html, slug, on_ats):
+    """Fields the adapter's optional probe_entry hook wants pinned (see adapters/)."""
+    fetch = ADAPTERS.get(atype)
+    module = sys.modules.get(getattr(fetch, "__module__", None))
+    hook = getattr(module, "probe_entry", None)
+    return dict(hook(url, html, slug, on_ats)) if hook else {}
+
+
+def _default_name(host, on_ats):
+    """Best-effort display name from the host (user can override with --name)."""
     if on_ats:
-        if atype == "icims":
-            base = re.sub(r"^(?:careers|jobs)[a-z]*-", "", host.split(".")[0])
-        elif atype == "dayforce":
-            segs = [s for s in urlparse(url).path.split("/") if s]
-            if segs and re.fullmatch(r"[a-z]{2}-[A-Z]{2}", segs[0]):
-                segs = segs[1:]
-            base = segs[0] if segs else host.split(".")[0]
-        elif atype == "jobvite":
-            segs = [s for s in urlparse(url).path.split("/") if s]
-            base = segs[0] if segs else host.split(".")[0]
-        elif atype == "gem":
-            segs = [s for s in urlparse(url).path.split("/") if s]
-            base = segs[0] if segs else host.split(".")[0]
-        elif atype in CONFIRMERS and slug:
-            base = slug
-        else:
-            base = host.split(".")[0]
+        base = host.split(".")[0]
     else:
         labels = [l for l in host.split(".")
                   if l not in ("www", "careers", "jobs", "com", "io", "co", "ca", "net", "org")]
         base = labels[0] if labels else host
-    return base.replace("-", " ").replace("_", " ").title()
+    return name_from_slug(base)

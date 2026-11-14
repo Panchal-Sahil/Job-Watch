@@ -71,6 +71,3 @@ OTHER_ATS = [
     ("Pinpoint", r"pinpointhq\.com"),
     ("Workday (peakon/other)", r"\.wd\d+\."),
 ]
-
-# White-labeled GH/Lever/Ashby boards pin their real slug in this config field.
-OVERRIDE_FIELD = {"greenhouse": "token", "lever": "company", "ashby": "board"}

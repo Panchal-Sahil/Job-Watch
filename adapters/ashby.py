@@ -1,12 +1,15 @@
 """Ashby ATS adapter."""
 
-from adapters.common import HEADERS, HTTP, TIMEOUT, _slug_from_url
+from adapters.common import HEADERS, HTTP, TIMEOUT, _slug_from_url, pin_slug
+
+# Config field a white-labelled board pins its real slug in.
+SLUG_FIELD = "board"
 
 
 def fetch_ashby(board):
     """Ashby public job-board API.
     URL like https://jobs.ashbyhq.com/<board>  ->  board."""
-    slug = _slug_from_url(board["url"], "board", board)
+    slug = _slug_from_url(board["url"], SLUG_FIELD, board)
     company = board.get("name", slug)
     api = f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
     resp = HTTP.get(api, headers=HEADERS, timeout=TIMEOUT)
@@ -28,3 +31,7 @@ def fetch_ashby(board):
             }
         )
     return jobs
+
+
+def probe_entry(url, page_html, slug, on_ats):
+    return pin_slug(SLUG_FIELD, slug, on_ats)

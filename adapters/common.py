@@ -62,3 +62,16 @@ def _slug_from_url(url, fallback_field, board):
         return board[fallback_field]
     segs = [s for s in urlparse(url).path.split("/") if s]
     return segs[-1] if segs else None
+
+
+def name_from_slug(slug):
+    """Display name from a URL slug: 'acme-co' -> 'Acme Co'."""
+    return slug.replace("-", " ").replace("_", " ").title()
+
+
+def pin_slug(field, slug, on_ats):
+    """probe_entry for slug-keyed boards (Greenhouse/Lever/Ashby). On the ATS host
+    the URL already carries the slug; a white-labelled page pins it in `field`."""
+    if not slug:
+        return {}
+    return {"name": name_from_slug(slug)} if on_ats else {field: slug}

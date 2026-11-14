@@ -2,6 +2,18 @@
 
 ADAPTERS is the registry: config.json's `type` selects the fetcher, and its
 insertion order is the canonical group order probe --add writes config.json in.
+
+An adapter module may also define one optional probe hook, used when probe
+builds a config entry for a board it detected:
+
+    probe_entry(url, page_html, slug, on_ats) -> dict
+
+`url` is the URL as given (before redirects), `page_html` its fetched HTML (may
+be ""), `slug` the slug probe found (Greenhouse/Lever/Ashby only, else None),
+and `on_ats` whether `url` is on the ATS's own host (a HOST_RULES match). Return
+the fields this type needs pinned in the entry (e.g. {"host": ...}); a "name"
+key is a display-name guess, used only when no API-provided name is known.
+Without the hook the entry is just name (from the host), type and url.
 """
 
 from adapters.ashby import fetch_ashby
