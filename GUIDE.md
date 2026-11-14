@@ -84,6 +84,8 @@ touch it. Two useful tricks:
 
 > Note: a job is only marked "seen" if it actually **matched** your filters and was shown.
 > So if you loosen your filters later, previously-hidden jobs can still show up.
+> A `--raw` run marks nothing as seen — it's a read-only look, so your next normal run
+> still shows the matches it listed.
 
 ---
 

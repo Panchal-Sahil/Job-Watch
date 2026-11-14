@@ -348,6 +348,13 @@ class TestRun(unittest.TestCase):
         self.assertEqual(res.new_jobs, [])
         self.assertEqual(res.seen, set())
 
+    def test_raw_shows_everything_but_marks_nothing_seen(self):
+        """--raw is a read-only look: the next normal run must still show matches."""
+        jobs = [posting("a:1"), posting("a:2", title="Marketing Manager")]
+        res = self._run({"Acme": jobs}, seen={"old"}, raw=True)
+        self.assertEqual({j["id"] for j in res.new_jobs}, {"a:1", "a:2"})
+        self.assertEqual(res.seen, {"old"})
+
     def test_raw_still_hides_already_seen(self):
         res = self._run({"Acme": [posting("a:1"), posting("a:2")]}, seen={"a:1"}, raw=True)
         self.assertEqual([j["id"] for j in res.new_jobs], ["a:2"])

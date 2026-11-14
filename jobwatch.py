@@ -222,7 +222,7 @@ def _parse_args():
     p = argparse.ArgumentParser(description="Poll ATS boards and print new matching jobs.")
     p.add_argument("--board", "-b", help="Only fetch boards whose name contains this string (case-insensitive)")
     p.add_argument("--type", "-t", help="Only fetch boards of this ATS type (e.g. greenhouse, workday)")
-    p.add_argument("--raw", action="store_true", help="Skip filtering — show all jobs, not just matches")
+    p.add_argument("--raw", action="store_true", help="Skip filtering — show all unseen jobs, not just matches; doesn't update seen.json")
     return p.parse_args()
 
 
@@ -238,8 +238,8 @@ def run(boards, fetch, seen, filters, *, workers, raw=False, on_board=None):
 
     A job is new if its id is in neither `seen` nor earlier in this run. A normal
     run shows new jobs that pass `filters` and marks only those seen — so loosening
-    a filter later still surfaces what it used to hide. `raw` shows and marks seen
-    every new job. `seen` itself is not mutated.
+    a filter later still surfaces what it used to hide. `raw` shows every new job
+    and marks nothing seen: it's a read-only look. `seen` itself is not mutated.
 
     `on_board(done, total, name, elapsed, jobs, error)` is called per board as it
     completes, from the calling thread.
@@ -269,7 +269,8 @@ def run(boards, fetch, seen, filters, *, workers, raw=False, on_board=None):
             if raw or matches(job, filters):
                 shown.add(job["id"])
                 new_jobs.append(job)
-                seen_after.add(job["id"])
+                if not raw:
+                    seen_after.add(job["id"])
 
     new_jobs.sort(key=lambda j: (j["company"], j["title"]))
     return RunResult(new_jobs=new_jobs, failed=sorted(failed), seen=seen_after)
